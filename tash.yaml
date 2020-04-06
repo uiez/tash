@@ -1,0 +1,38 @@
+templates:
+  build:
+    - condition:
+        value: $GOOS
+        compare: windows
+        actions:
+          - env:
+              value: EXECUTABLE_EXT=.exe
+    - cmd:
+        exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH | string.default amd64}$EXECUTABLE_EXT
+
+tasks:
+  darwin_amd64:
+    description: |-
+      build darwin binary
+    actions:
+      - env:
+          value: GOOS=darwin
+      - template: build
+
+  linux_amd64:
+    description: |-
+      build linux binary
+    actions:
+      - env:
+          value: GOOS=linux
+      - template: build
+
+  windows_amd64:
+    description: |-
+      build windows binary
+    actions:
+      - env:
+          value: GOOS=windows
+      - template: build
+
+  all:
+    depends: [darwin_amd64, linux_amd64, windows_amd64]
