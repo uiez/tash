@@ -110,6 +110,16 @@ type ActionCmd struct {
 	StderrAppend bool
 }
 
+const (
+	SilentFlagAllowError = "allowError"
+	SilentFlagShowLog    = "showLog"
+)
+
+type ActionSilent struct {
+	Flags   []string
+	Actions []Action
+}
+
 type Action struct {
 	Env       Env
 	Cmd       ActionCmd
@@ -118,10 +128,12 @@ type Action struct {
 	Replace   ActionReplace
 	Chmod     ActionChmod
 	Chdir     ActionChdir
+	Mkdir     string
 	Template  string
 	Condition ActionCondition
 	Switch    ActionSwitch
 	Loop      ActionLoop
+	Silent    ActionSilent
 }
 
 type Task struct {
@@ -397,5 +409,17 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 			return "", fmt.Errorf("get absolute path failed: %s, %w", val, err)
 		}
 		return abspath, nil
+	},
+	"file.dirname": func(val string, args []string) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return filepath.Dir(val), nil
+	},
+	"file.basename": func(val string, args []string) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return filepath.Base(val), nil
 	},
 }

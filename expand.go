@@ -22,11 +22,11 @@ func newVars() *ExpandEnvs {
 }
 
 func (e *ExpandEnvs) add(log logger, k, v string) {
-	log.debugln("env add:", k, v)
 	err := e.expandStrings(&v)
 	if err != nil {
 		log.fatalln(err)
 	}
+	log.debugln("env add:", k, v)
 	e.envs[k] = v
 }
 
@@ -35,7 +35,7 @@ func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []Env) {
 		if env.Cmd != "" {
 			output := runCommand(log, e, env.Cmd, true, commandFds{})
 			if env.Name != "" {
-				e.add(log, env.Name, output)
+				e.add(log, env.Name, strings.TrimSpace(output))
 				continue
 			}
 

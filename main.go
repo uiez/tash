@@ -40,8 +40,10 @@ func (f *Flags) Metadata() map[string]flag.Flag {
 }
 
 type indentLogger struct {
-	indent string
-	debug  bool
+	indent     string
+	debug      bool
+	hideLog    bool
+	allowError bool
 }
 
 func (w indentLogger) addIndent() indentLogger {
@@ -50,6 +52,7 @@ func (w indentLogger) addIndent() indentLogger {
 		debug:  w.debug,
 	}
 }
+
 func (w indentLogger) addIndentIfDebug() indentLogger {
 	if w.debug {
 		return w.addIndent()
@@ -57,19 +60,36 @@ func (w indentLogger) addIndentIfDebug() indentLogger {
 	return w
 }
 
+func (w indentLogger) silent(hideLog, allowError bool) indentLogger {
+	return indentLogger{
+		indent:     w.indent,
+		debug:      w.debug,
+		hideLog:    hideLog,
+		allowError: allowError,
+	}
+}
+
 func (w indentLogger) print(fg color.Attribute, out io.Writer, v ...interface{}) {
-	fmt := color.New(fg)
-	_, _ = fmt.Fprint(out, w.indent)
-	_, _ = fmt.Fprintln(out, v...)
+	if !w.hideLog || w.debug {
+		fmt := color.New(fg)
+		_, _ = fmt.Fprint(out, w.indent)
+		_, _ = fmt.Fprintln(out, v...)
+	}
 }
 
 func (w indentLogger) fatalln(v ...interface{}) {
 	w.print(color.FgHiRed, os.Stderr, v...)
-	os.Exit(1)
+	if !w.allowError {
+		os.Exit(1)
+	}
 }
 
 func (w indentLogger) infoln(v ...interface{}) {
 	w.print(color.FgHiGreen, os.Stdout, v...)
+}
+
+func (w indentLogger) warnln(v ...interface{}) {
+	w.print(color.FgHiYellow, os.Stdout, v...)
 }
 
 func (w indentLogger) debugln(v ...interface{}) {
@@ -242,10 +262,6 @@ func runTask(log indentLogger, configs Configuration, name string, task Task, ba
 		return checkHash(log, res.SourceUrl, res.Hash.Alg, res.Hash.Sig, fd)
 	}
 	runCopyAction := func(log indentLogger, cpy ActionCopy, vars *ExpandEnvs) {
-		err := vars.expandStrings(&cpy.DestPath, &cpy.SourceUrl)
-		if err != nil {
-			log.fatalln(err)
-		}
 		if !resourceNeedsSync(log, cpy) {
 			log.debugln("resource reuse.")
 			return
@@ -530,7 +546,7 @@ func runTask(log indentLogger, configs Configuration, name string, task Task, ba
 		}
 		looper(func(v string) {
 			vars := vars
-			log := log.addIndent()
+			log := log.addIndentIfDebug()
 			if action.Env != "" {
 				vars.parseStrings(log, []string{action.Env + "=" + v})
 
@@ -602,6 +618,10 @@ func runTask(log indentLogger, configs Configuration, name string, task Task, ba
 				runActionCmd(log, a.Cmd, vars)
 			}
 			if a.Copy.DestPath != "" {
+				err := vars.expandStrings(&a.Copy.DestPath, &a.Copy.SourceUrl)
+				if err != nil {
+					log.fatalln(err)
+				}
 				log.infoln("Copy:", a.Copy.SourceUrl, a.Copy.DestPath)
 				runCopyAction(log, a.Copy, vars)
 			}
@@ -654,6 +674,17 @@ func runTask(log indentLogger, configs Configuration, name string, task Task, ba
 					log.fatalln("chdir back failed:", err)
 				}
 			}
+			if a.Mkdir != "" {
+				err = vars.expandStrings(&a.Mkdir)
+				if err != nil {
+					log.fatalln(err)
+				}
+				log.infoln("Mkdir:", a.Mkdir)
+				err = os.MkdirAll(a.Mkdir, 0755)
+				if err != nil {
+					log.fatalln("mkdir failed:", err)
+				}
+			}
 			if a.Template != "" {
 				log.infoln("Template:", a.Template)
 				runActionTemplate(log, a.Template, vars)
@@ -669,6 +700,24 @@ func runTask(log indentLogger, configs Configuration, name string, task Task, ba
 			if len(a.Loop.Actions) > 0 {
 				log.debugln("Loop")
 				runActionLoop(log, a.Loop, vars)
+			}
+			if len(a.Silent.Actions) > 0 {
+				log.debugln("Silent")
+				var (
+					showLog    bool
+					allowError bool
+				)
+				for _, flag := range a.Silent.Flags {
+					switch flag {
+					case SilentFlagShowLog:
+						showLog = true
+					case SilentFlagAllowError:
+						allowError = true
+					default:
+						log.warnln("invalid silent flag:", flag)
+					}
+				}
+				runActions(log.addIndentIfDebug().silent(!showLog, allowError), vars, a.Silent.Actions)
 			}
 		}
 	}

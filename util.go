@@ -23,6 +23,7 @@ import (
 type logger interface {
 	debugln(v ...interface{})
 	infoln(v ...interface{})
+	warnln(v ...interface{})
 	fatalln(v ...interface{})
 }
 
