@@ -23,7 +23,7 @@ type Flags struct {
 	Conf string `usage:"config file, default tash.yaml in current/ancestor directory"`
 	List struct {
 		Enable bool
-		Detail bool `names:"-d,--detail" default:"false" usage:"show task descriptions"`
+		Detail bool `names:"--detail" default:"false" usage:"show task descriptions"`
 	} `usage:"list available tasks"`
 
 	Debug bool     `names:"--debug" usage:"show debug messages"`
@@ -155,8 +155,7 @@ func main() {
 				if flags.List.Detail {
 					fmt.Fprintf(&buf, ": %s", task.Description)
 				}
-				buf.WriteString("\n")
-				buf.WriteTo(os.Stderr)
+				log.infoln(buf.String())
 				buf.Reset()
 			}
 		}
@@ -223,8 +222,9 @@ func runTask(log indentLogger, configs Configuration, name string, task Task, ba
 	}
 
 	vars := newVars()
-	vars.parseStrings(log, os.Environ())
-	vars.parseStrings(log, []string{"WORKDIR=" + workDir, "TASK_NAME=" + name})
+	vars.parsePairs(log, os.Environ(), false)
+	vars.add(log, "WORKDIR", workDir, false)
+	vars.add(log, "TASK_NAME", name, false)
 	vars.parseEnvs(log, configs.Envs)
 
 	resourceNeedsSync := func(log logger, cpy ActionCopy) bool {
@@ -548,7 +548,7 @@ func runTask(log indentLogger, configs Configuration, name string, task Task, ba
 			vars := vars
 			log := log.addIndentIfDebug()
 			if action.Env != "" {
-				vars.parseStrings(log, []string{action.Env + "=" + v})
+				vars.add(log, action.Env, v, false)
 
 				log.debugln("loop run with env:", action.Env+"="+v)
 			}

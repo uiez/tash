@@ -21,11 +21,14 @@ func newVars() *ExpandEnvs {
 	return vars
 }
 
-func (e *ExpandEnvs) add(log logger, k, v string) {
-	err := e.expandStrings(&v)
-	if err != nil {
-		log.fatalln(err)
+func (e *ExpandEnvs) add(log logger, k, v string, expand bool) {
+	if expand {
+		err := e.expandStrings(&v)
+		if err != nil {
+			log.fatalln(err)
+		}
 	}
+
 	log.debugln("env add:", k, v)
 	e.envs[k] = v
 }
@@ -35,7 +38,7 @@ func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []Env) {
 		if env.Cmd != "" {
 			output := runCommand(log, e, env.Cmd, true, commandFds{})
 			if env.Name != "" {
-				e.add(log, env.Name, strings.TrimSpace(output))
+				e.add(log, env.Name, strings.TrimSpace(output), true)
 				continue
 			}
 
@@ -43,17 +46,17 @@ func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []Env) {
 			err := json.NewDecoder(strings.NewReader(output)).Decode(&kvs)
 			if err == nil {
 				for k, v := range kvs {
-					e.add(log, k, v)
+					e.add(log, k, v, true)
 				}
 				continue
 			}
 			lines := strings.Split(output, "\n")
-			e.parseStrings(log, lines)
+			e.parsePairs(log, lines, false)
 		} else if env.Value != "" {
 			if env.Name == "" {
-				e.parseStrings(log, []string{env.Value})
+				e.parsePairs(log, strings.Split(env.Value, ";"), true)
 			} else {
-				e.add(log, env.Name, env.Value)
+				e.add(log, env.Name, env.Value, true)
 			}
 		} else if env.Name != "" {
 			e.envs[env.Name] = ""
@@ -61,19 +64,20 @@ func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []Env) {
 	}
 }
 
-func (e *ExpandEnvs) parseStrings(log logger, items []string) {
+func (e *ExpandEnvs) parsePairs(log logger, items []string, expand bool) {
 	for _, item := range items {
-		for _, env := range strings.Split(item, ";") {
-			k, v := stringPartSplitAndTrim(env, "=")
-			if k == "" || v == "" {
-				continue
-			}
-			if uv, err := strconv.Unquote(v); err == nil {
-				v = uv
-			}
-
-			e.add(log, k, v)
+		if item == "" {
+			continue
 		}
+		k, v := stringPartSplitAndTrim(item, "=")
+		if k == "" || v == "" {
+			continue
+		}
+		if uv, err := strconv.Unquote(v); err == nil {
+			v = uv
+		}
+
+		e.add(log, k, v, expand)
 	}
 }
 
