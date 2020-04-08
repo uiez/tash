@@ -167,7 +167,7 @@ func (r runner) searchTemplate(name string) ([]Action, bool) {
 }
 
 func (r runner) runTask(name string, task Task, baseDir string) {
-	workDir := filepath.Join(baseDir, task.WorkDir)
+	workDir := stringToSlash(filepath.Join(baseDir, task.WorkDir))
 	err := os.Chdir(workDir)
 	if err != nil {
 		r.fatalln("change working directory failed:", err)
@@ -178,6 +178,8 @@ func (r runner) runTask(name string, task Task, baseDir string) {
 	envs := newExpandEnvs()
 	envs.parsePairs(r.log(), os.Environ(), false)
 	envs.add(r.log(), "WORKDIR", workDir, false)
+	envs.add(r.log(), "HOST_OS", runtime.GOOS, false)
+	envs.add(r.log(), "HOST_ARCH", runtime.GOARCH, false)
 	envs.add(r.log(), "TASK_NAME", name, false)
 	envs.parseEnvs(r.log(), r.configs.Envs)
 
@@ -586,6 +588,7 @@ func (r runner) runActionCmd(action ActionCmd, envs *ExpandEnvs) {
 	}
 	runCommand(r.log(), envs, action.Exec, false, fds)
 }
+
 func (r runner) runActions(envs *ExpandEnvs, a []Action) {
 	for _, a := range a {
 		if !reflect.DeepEqual(a.Env, Env{}) {

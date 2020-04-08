@@ -84,7 +84,12 @@ see [syntax.go](/syntax.go).
 //
 // predefined task-specific env:
 //    WORKDIR: task initial working directory
+//    HOST_OS: host os(GOOS)
+//    HOST_ARCH: host arch(GOARCH)
 //    TASK_NAME: task name
+//
+// all path separator '\' on windows have been transformed to slash
+// to avoid conflicting with escaping in internal file paths 
 ```
 
 * Configuration
@@ -389,8 +394,10 @@ var operatorAlias = map[string]string{
 * Expand filters
 ```Go
 const (
-	// args: defaultValue
+    // args: defaultValue
 	ef_stringDefault = "string.default"
+	// args: no args
+	ef_stringTrimSpace = "string.trimSpace"
 	// nargs: 0: whole string, 1: lower characters after [index], 2:index count, lower [count] characters after [index]
 	// index could be negative to iterate from last, begin at -1
 	ef_stringLower = "string.lower"
@@ -410,6 +417,10 @@ const (
 	ef_fileDirname = "file.dirname"
 	// args: no args
 	ef_fileBasename = "file.basename"
+	// args: no args
+	ef_fileToSlash = "file.toSlash"
+	// args: no args
+	ef_fileFromSlash = "file.fromSlash"
 )
 ```
 

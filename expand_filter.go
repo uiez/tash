@@ -89,6 +89,12 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 		}
 		return val, nil
 	},
+	ef_stringTrimSpace: func(val string, args []string) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return strings.TrimSpace(val), nil
+	},
 	ef_stringLower: func(val string, args []string) (string, error) {
 		rs := []rune(val)
 		start, end, err := stringRange(len(rs), args)
@@ -133,6 +139,7 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 		if err != nil {
 			return "", fmt.Errorf("invalid file pattern: %s, %w", val, err)
 		}
+		matched = sliceToSlash(matched)
 		return strings.Join(matched, " "), nil
 	},
 	ef_fileAbspath: func(val string, args []string) (string, error) {
@@ -143,18 +150,30 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 		if err != nil {
 			return "", fmt.Errorf("get absolute path failed: %s, %w", val, err)
 		}
-		return abspath, nil
+		return stringToSlash(abspath), nil
 	},
 	ef_fileDirname: func(val string, args []string) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
-		return filepath.Dir(val), nil
+		return stringToSlash(filepath.Dir(val)), nil
 	},
 	ef_fileBasename: func(val string, args []string) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
 		return filepath.Base(val), nil
+	},
+	ef_fileToSlash: func(val string, args []string) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return filepath.ToSlash(val), nil
+	},
+	ef_fileFromSlash: func(val string, args []string) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return filepath.FromSlash(val), nil
 	},
 }
