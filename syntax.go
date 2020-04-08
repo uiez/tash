@@ -1,50 +1,138 @@
 package main
 
-import (
-	"bytes"
-	"fmt"
-	"io/ioutil"
-	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
-	"unicode"
-)
+// Expanding:
+// almost all strings will be expanded first with environment,
+// except:
+//	* env name
+//	* task work dir
+//  * loop seq/times
+//  etc..
+// the expandable format are:
+//	* $ENV_NAME_ALPHA_NUM
+//	* ${ENV_NAME_NO_LIMIT [| filter[ arg]...]...}
+//	* ${"string literal" [| filter[ arg]...]...}
+// uses '\' to avoid escaping, such as '\$', '\$', '\\'
 
-const (
-	ResourceHashSha1   = "SHA1"
-	ResourceHashMD5    = "MD5"
-	ResourceHashSha256 = "SHA256"
-)
+type Configuration struct {
+	// defines global environment variables.
+	Envs []Env
+	// defines templates(action list) can be referenced from tasks.
+	// the key is template name
+	Templates map[string][]Action
 
-type Env struct {
-	Name  string
-	Value string
-	Cmd   string
+	// defines tasks
+	// the key is task name
+	Tasks map[string]Task
 }
 
+// it's the only way to pass parameters between action/template or to commands.
+// if name is empty, then value or cmd will be interpreted as key=value pairs,
+// otherwise value or cmd will be treated as env value
+type Env struct {
+	// env name
+	Name string
+	// env value if name is empty,
+	// otherwise it should be semicolon-separated key=value or key="value" pairs
+	Value string
+	// execute command and capture it's output, supports unix pipe |.
+	// output format could be json(map(string,string)) or key=value lines.
+	Cmd string
+}
+
+type Task struct {
+	Description string
+	// tasks depends on, couldn't be cycle-referenced.
+	Depends []string
+	// current directory if empty
+	WorkDir string
+
+	// a sequence of task actions.
+	Actions []Action
+}
+
+type Action struct {
+	// define environments
+	Env Env
+	// execute command
+	Cmd ActionCmd
+	// copy resources
+	Copy ActionCopy
+	// delete file/directory
+	Del string
+	// replace file content
+	Replace ActionReplace
+	// change file/directory mode
+	Chmod ActionChmod
+	// change current working directory
+	Chdir ActionChdir
+	// create directory and it's parents, ignore if already existed
+	Mkdir string
+	// execute actions defined in template
+	Template string
+	// conditional running
+	Condition ActionCondition
+	// sugar for condition running
+	Switch ActionSwitch
+	// loop running, same as 'for' keyword in programming, 'while' doesn't supported yet.
+	Loop ActionLoop
+	// silent logs or errors, same as '-' and '@' in makefile.
+	Silent ActionSilent
+}
+
+const (
+	ResourceHashAlgSha1   = "SHA1"
+	ResourceHashAlgMD5    = "MD5"
+	ResourceHashAlgSha256 = "SHA256"
+)
+
+// resource copy
 type ActionCopy struct {
+	// source url could be file or http/https if contains schema, otherwise it will be treated as file
+	// both source and dest could be directory in file mode.
 	SourceUrl string
-	DestPath  string
-	Hash      struct {
+	// if source is directory, destPath will be removed first, than copy again
+	DestPath string
+	// hash checking for file
+	Hash struct {
+		// hash algorithm, support SHA1, MD5 and SHA256, sha1 by default.
 		Alg string
+		// hexadecimal string, case insensitive
 		Sig string
 	}
 }
 
+// replace file content
 type ActionReplace struct {
-	File     string
+	// file path, not directory
+	File string
+	// replaces, key is old string, value is new string
 	Replaces map[string]string
-	Regexp   bool
+	// do regexp replacing
+	Regexp bool
 }
 
-type ConditionIf struct {
-	Value    string
-	Operator string
-	Compare  string
+// conditional running
+type ActionCondition struct {
+	// a sugar syntax for a single case to reduce yaml nesting level.
+	*ConditionCase `yaml:"case"`
+
+	Cases []ConditionCase
 }
 
+// a condition case to be run
+type ConditionCase struct {
+	// condition checking, defined as embed to reduce yaml nesting level
+	*Condition
+	// a default case, if no any other cases matched, the default case will be run
+	// default can be true even if condition exist.
+	Default bool
+	Actions []Action
+}
+
+// condition checking, support if, not, and, or
 type Condition struct {
+	// condition checking like 'if' keyword in programming.
+	// defined as embed to reduce yaml nesting level
 	*ConditionIf `yaml:"if"`
 
 	Not *Condition
@@ -52,16 +140,22 @@ type Condition struct {
 	Or  []Condition
 }
 
-type ConditionCase struct {
-	*Condition
-	Default bool
-	Actions []Action
+// if checking, if both operator and compare is empty, value will be treated as a boolean,
+// if only operator is empty, it's treated as a string-equals checking
+type ConditionIf struct {
+	// left-hand operand
+	Value string
+	// operator
+	Operator string
+	// right-hand operand, some boolean operators doesn't needs this field
+	Compare string
 }
 
-type ActionCondition struct {
-	*ConditionCase
-
-	Cases []ConditionCase
+// sugar for condition checking
+type ActionSwitch struct {
+	Value    string
+	Operator string
+	Cases    []SwitchCase
 }
 
 type SwitchCase struct {
@@ -70,42 +164,57 @@ type SwitchCase struct {
 	Actions []Action
 }
 
-type ActionSwitch struct {
-	Value    string
-	Operator string
-	Cases    []SwitchCase
-}
-
+// loop running
 type ActionLoop struct {
-	Env   string
+	// env name to access loop variable
+	Env string
+	// loop by times
 	Times int
-	Seq   struct {
+	// loop in range, from,to,step could be both negative
+	Seq struct {
 		From, To, Step int
 	}
+	// loop over string array
 	Array []string
+	// loop over string array split from given value and separator
 	Split struct {
 		Value     string
 		Separator string
 	}
 
+	// actions to be run
 	Actions []Action
 }
 
+// change path mode such as 0644 for file, 0755 for directory and executable.
 type ActionChmod struct {
 	Path string
 	Mode uint
 }
 
+// change current working directory
 type ActionChdir struct {
-	Dir     string
+	Dir string
+	// actions run in new working directory
 	Actions []Action
 }
 
+// command execution
 type ActionCmd struct {
-	Exec         string
-	Stdin        string
-	Stdout       string
+	// command line string, supports unix pipe
+	Exec string
+
+	// io redirection from/to file
+
+	// os.Stdin if empty
+	Stdin string
+
+	// os.Stdout if empty
+	Stdout string
+	// append to or truncate file
 	StdoutAppend bool
+
+	// os.Stderr if empty
 	Stderr       string
 	StderrAppend bool
 }
@@ -115,51 +224,15 @@ const (
 	SilentFlagShowLog    = "showLog"
 )
 
+// silent execution, default hide log, but still fatal on errors
+// uses flags to changes the default behavior
 type ActionSilent struct {
 	Flags   []string
 	Actions []Action
 }
 
-type Action struct {
-	Env       Env
-	Cmd       ActionCmd
-	Copy      ActionCopy
-	Del       string
-	Replace   ActionReplace
-	Chmod     ActionChmod
-	Chdir     ActionChdir
-	Mkdir     string
-	Template  string
-	Condition ActionCondition
-	Switch    ActionSwitch
-	Loop      ActionLoop
-	Silent    ActionSilent
-}
-
-type Task struct {
-	Description string
-	Depends     []string
-	WorkDir     string
-
-	Actions []Action
-}
-
-type Configuration struct {
-	Envs      []Env
-	Templates map[string][]Action
-	Tasks     map[string]Task
-}
-
-func (c Configuration) searchTask(name string) (Task, bool) {
-	task, ok := c.Tasks[name]
-	return task, ok
-}
-
-func (c Configuration) searchTemplate(name string) ([]Action, bool) {
-	tmpl, ok := c.Templates[name]
-	return tmpl, ok
-}
-
+// operators in condition and switch
+// there is a sugar that put a op_bool_not before actual operator to do not checking.
 const (
 	op_bool_not                  = "bool.not"
 	op_bool_true                 = "bool.true"
@@ -233,193 +306,27 @@ var operatorAlias = map[string]string{
 	"-u":   op_file_setuid,
 }
 
-func stringRange(l int, args []string) (start, end int, err error) {
-	var count int
-	switch len(args) {
-	case 0:
-		start = 0
-		count = l
-	case 1:
-		var err error
-		start, err = strconv.Atoi(args[0])
-		if err != nil {
-			return 0, 0, fmt.Errorf("couldn't convert args to integer")
-		}
-		count = l
-	case 2:
-		var err1 error
-		var err2 error
-		start, err1 = strconv.Atoi(args[0])
-		count, err2 = strconv.Atoi(args[0])
-		if err1 != nil || err2 != nil {
-			return 0, 0, fmt.Errorf("couldn't convert args to integer")
-		}
-	}
-	if count < 0 {
-		return 0, 0, fmt.Errorf("invalid args")
-	}
-	if start < 0 {
-		last := -(l - 1)
-		if start < last {
-			start = last
-		}
-		if n := start - last + 1; count > n {
-			count = n
-		}
-		start = l - start
-	} else {
-		last := l - 1
-		if start > last {
-			start = last
-		}
-		if n := last - start + 1; count > n {
-			count = n
-		}
-	}
-	end = start + count
-	return
-}
-
-func stringReplace(val string, args []string, isRegexp bool) (string, error) {
-	if len(args)%2 != 0 || len(args) <= 0 {
-		return "", fmt.Errorf("invalid argument count")
-	}
-	if !isRegexp {
-		if len(args) == 2 {
-			val = strings.ReplaceAll(val, args[0], args[1])
-		} else {
-			r := strings.NewReplacer(args...)
-			val = r.Replace(val)
-		}
-	} else {
-		for i := 0; i < len(args); i += 2 {
-			r, err := regexp.CompilePOSIX(args[i])
-			if err != nil {
-				return "", fmt.Errorf("compile regexp failed: %s, %w", args[i], err)
-			}
-			val = r.ReplaceAllString(val, args[i+1])
-		}
-	}
-	return val, nil
-}
-
-func fileReplace(path string, args map[string]string, isRegexp bool) error {
-	if len(args) == 0 {
-		return nil
-	}
-	var fileContent []byte
-	var err error
-	fileContent, err = ioutil.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read file failed: %w", err)
-	}
-	if !isRegexp {
-		if len(args) == 1 {
-			var old, new string
-			for k, v := range args {
-				old, new = k, v
-			}
-			fileContent = bytes.ReplaceAll(fileContent, []byte(old), []byte(new))
-		} else {
-			var oldnews []string
-			for k, v := range args {
-				oldnews = append(oldnews, k, v)
-			}
-			r := strings.NewReplacer(oldnews...)
-			fileContent = []byte(r.Replace(string(fileContent)))
-		}
-	} else {
-		for k, v := range args {
-			r, err := regexp.CompilePOSIX(k)
-			if err != nil {
-				return fmt.Errorf("compile regexp failed: %s, %w", k, err)
-			}
-			fileContent = r.ReplaceAll(fileContent, []byte(v))
-		}
-	}
-	err = ioutil.WriteFile(path, fileContent, 0644)
-	if err != nil {
-		return fmt.Errorf("write file failed: %w", err)
-	}
-	return nil
-}
-
-var expandFilters = map[string]func(val string, args []string) (string, error){
-	"string.default": func(val string, args []string) (string, error) {
-		if len(args) != 1 {
-			return "", fmt.Errorf("invalid args")
-		}
-		if val == "" {
-			return args[0], nil
-		}
-		return val, nil
-	},
-	"string.lower": func(val string, args []string) (string, error) {
-		rs := []rune(val)
-		start, end, err := stringRange(len(rs), args)
-		if err != nil {
-			return "", err
-		}
-		for i, v := 0, rs[start:end]; i < len(v); i++ {
-			v[i] = unicode.ToLower(v[i])
-		}
-		return string(rs), nil
-	},
-	"string.upper": func(val string, args []string) (string, error) {
-		rs := []rune(val)
-		start, end, err := stringRange(len(rs), args)
-		if err != nil {
-			return "", err
-		}
-		for i, v := 0, rs[start:end]; i < len(v); i++ {
-			v[i] = unicode.ToUpper(v[i])
-		}
-		return string(rs), nil
-	},
-	"string.slice": func(val string, args []string) (string, error) {
-		rs := []rune(val)
-		start, end, err := stringRange(len(rs), args)
-		if err != nil {
-			return "", err
-		}
-		return string(rs[start : start+end]), nil
-	},
-	"string.replace": func(val string, args []string) (string, error) {
-		return stringReplace(val, args, false)
-	},
-	"string.regexpReplace": func(val string, args []string) (string, error) {
-		return stringReplace(val, args, true)
-	},
-	"file.match": func(val string, args []string) (string, error) {
-		if len(args) != 0 {
-			return "", fmt.Errorf("args is not needed")
-		}
-		matched, err := filepath.Glob(val)
-		if err != nil {
-			return "", fmt.Errorf("invalid file pattern: %s, %w", val, err)
-		}
-		return strings.Join(matched, " "), nil
-	},
-	"file.abspath": func(val string, args []string) (string, error) {
-		if len(args) != 0 {
-			return "", fmt.Errorf("args is not needed")
-		}
-		abspath, err := filepath.Abs(val)
-		if err != nil {
-			return "", fmt.Errorf("get absolute path failed: %s, %w", val, err)
-		}
-		return abspath, nil
-	},
-	"file.dirname": func(val string, args []string) (string, error) {
-		if len(args) != 0 {
-			return "", fmt.Errorf("args is not needed")
-		}
-		return filepath.Dir(val), nil
-	},
-	"file.basename": func(val string, args []string) (string, error) {
-		if len(args) != 0 {
-			return "", fmt.Errorf("args is not needed")
-		}
-		return filepath.Base(val), nil
-	},
-}
+// expand filters
+const (
+	// args: defaultValue
+	ef_stringDefault = "string.default"
+	// nargs: 0: whole string, 1: lower characters after [index], 2:index count, lower [count] characters after [index]
+	// index could be negative to iterate from last, begin at -1
+	ef_stringLower = "string.lower"
+	// args is same as stringLower, but transform to upper case.
+	ef_stringUpper = "string.upper"
+	// args is same as stringLower, but returns string inside the range
+	ef_stringSlice = "string.slice"
+	// args: [old new]..., do literal replacing
+	ef_stringReplace = "string.replace"
+	// args: [old new]..., do regexp replacing
+	ef_stringRegexpReplace = "string.regexpReplace"
+	// return files match given pattern, args: no args
+	ef_fileGlob = "file.glob"
+	// args: no args
+	ef_fileAbspath = "file.abspath"
+	// args: no args
+	ef_fileDirname = "file.dirname"
+	// args: no args
+	ef_fileBasename = "file.basename"
+)

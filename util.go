@@ -27,9 +27,9 @@ type logger interface {
 	fatalln(v ...interface{})
 }
 
-func stringTrimAt(s []string, i int) string {
+func stringAt(s []string, i int) string {
 	if i < len(s) {
-		return strings.TrimSpace(s[i])
+		return s[i]
 	}
 	return ""
 }
@@ -56,9 +56,9 @@ func stringSplitAndTrim(s, sep string) []string {
 	return secs
 }
 
-func stringPartSplitAndTrim(s, sep string) (s1, s2 string) {
+func stringSplitAndTrimToPair(s, sep string) (s1, s2 string) {
 	secs := strings.SplitN(s, sep, 2)
-	return stringTrimAt(secs, 0), stringTrimAt(secs, 1)
+	return stringAt(secs, 0), stringAt(secs, 1)
 }
 
 func copyPath(dst, src string) error {
@@ -133,11 +133,11 @@ func copyPath(dst, src string) error {
 func checkHash(log logger, path string, alg, sig string, r io.Reader) bool {
 	var hashCreator func() hash.Hash
 	switch alg {
-	case ResourceHashSha1:
+	case ResourceHashAlgSha1:
 		hashCreator = sha1.New
-	case ResourceHashMD5:
+	case ResourceHashAlgMD5:
 		hashCreator = md5.New
-	case ResourceHashSha256:
+	case ResourceHashAlgSha256:
 		hashCreator = sha256.New
 	}
 	if hashCreator == nil || sig == "" {
@@ -220,7 +220,7 @@ func runCommand(log indentLogger, vars *ExpandEnvs, cmd string, needsOutput bool
 
 type conditionContext struct {
 	log           logger
-	vars          *ExpandEnvs
+	envs          *ExpandEnvs
 	valueOrigin   string
 	compareOrigin string
 }
@@ -242,7 +242,7 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 		not bool
 	)
 	if idx := strings.Index(operator, " "); idx > 0 {
-		n, o := stringPartSplitAndTrim(operator, " ")
+		n, o := stringSplitAndTrimToPair(operator, " ")
 		fixAlias(&n)
 		if n == op_bool_not {
 			not = true
@@ -366,7 +366,7 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 				ok = !ok
 			}
 		case op_env_defined:
-			ok = ctx.vars.Exist(value)
+			ok = ctx.envs.Exist(value)
 		case op_file_exist:
 			ok = checkFileStat(nil)
 		case op_file_blockDevice:
@@ -430,4 +430,45 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 		return !ok
 	}
 	return ok
+}
+
+func fileReplace(path string, args map[string]string, isRegexp bool) error {
+	if len(args) == 0 {
+		return nil
+	}
+	var fileContent []byte
+	var err error
+	fileContent, err = ioutil.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read file failed: %w", err)
+	}
+	if !isRegexp {
+		if len(args) == 1 {
+			var old, new string
+			for k, v := range args {
+				old, new = k, v
+			}
+			fileContent = bytes.ReplaceAll(fileContent, []byte(old), []byte(new))
+		} else {
+			var oldnews []string
+			for k, v := range args {
+				oldnews = append(oldnews, k, v)
+			}
+			r := strings.NewReplacer(oldnews...)
+			fileContent = []byte(r.Replace(string(fileContent)))
+		}
+	} else {
+		for k, v := range args {
+			r, err := regexp.CompilePOSIX(k)
+			if err != nil {
+				return fmt.Errorf("compile regexp failed: %s, %w", k, err)
+			}
+			fileContent = r.ReplaceAll(fileContent, []byte(v))
+		}
+	}
+	err = ioutil.WriteFile(path, fileContent, 0644)
+	if err != nil {
+		return fmt.Errorf("write file failed: %w", err)
+	}
+	return nil
 }

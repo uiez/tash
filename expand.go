@@ -13,7 +13,7 @@ type ExpandEnvs struct {
 	envs map[string]string
 }
 
-func newVars() *ExpandEnvs {
+func newExpandEnvs() *ExpandEnvs {
 	vars := &ExpandEnvs{
 		envs: make(map[string]string),
 	}
@@ -69,7 +69,7 @@ func (e *ExpandEnvs) parsePairs(log logger, items []string, expand bool) {
 		if item == "" {
 			continue
 		}
-		k, v := stringPartSplitAndTrim(item, "=")
+		k, v := stringSplitAndTrimToPair(item, "=")
 		if k == "" || v == "" {
 			continue
 		}
@@ -113,7 +113,7 @@ func (e *ExpandEnvs) trimSpaceIfUnquoted(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func (e *ExpandEnvs) get(name string, filters []string) (string, error) {
+func (e *ExpandEnvs) lookupAndFilter(name string, filters []string) (string, error) {
 	var val string
 	us, err := strconv.Unquote(name)
 	if err == nil && us != name {
@@ -167,7 +167,7 @@ func (e *ExpandEnvs) expandString(s string) (string, error) {
 			filters = secs[1:]
 		}
 		var v string
-		v, err = e.get(name, filters)
+		v, err = e.lookupAndFilter(name, filters)
 		return []rune(v)
 	}
 	rs := []rune(s)
