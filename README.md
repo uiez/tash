@@ -18,6 +18,52 @@ by default, tash will lookup `tash.yaml` under current/ancestor directories, or 
 * run tasks: `tash TASK_NAME... [--debug]`
 * show help: `tash -h`
 
+# Example
+* building tash itself
+```YAML
+templates:
+  build:
+    - condition:
+        value: $GOOS
+        compare: windows
+        actions:
+          - env:
+              value: EXECUTABLE_EXT=.exe
+    - cmd:
+        exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH | string.default amd64}$EXECUTABLE_EXT
+
+tasks:
+  darwin_amd64:
+    description: |-
+      build darwin binary
+    actions:
+      - env:
+          value: GOOS=darwin
+      - template: build
+
+  linux_amd64:
+    description: |-
+      build linux binary
+    actions:
+      - env:
+          value: GOOS=linux
+      - template: build
+
+  windows_amd64:
+    description: |-
+      build windows binary
+    actions:
+      - env:
+          value: GOOS=windows
+      - template: build
+
+  all:
+    depends: [darwin_amd64, linux_amd64, windows_amd64]
+```
+
+* skia go binding
+[tash.yaml](https://github.com/zhuah/skia-go/blob/master/tash.yaml)
+
 # Configuration Syntax
 see [syntax.go](/syntax.go).
 
@@ -35,6 +81,10 @@ see [syntax.go](/syntax.go).
 //	* ${ENV_NAME_NO_LIMIT [| filter[ arg]...]...}
 //	* ${"string literal" [| filter[ arg]...]...}
 // uses '\' to avoid escaping, such as '\$', '\$', '\\'
+//
+// predefined task-specific env:
+//    WORKDIR: task initial working directory
+//    TASK_NAME: task name
 ```
 
 * Configuration
@@ -361,49 +411,6 @@ const (
 	// args: no args
 	ef_fileBasename = "file.basename"
 )
-```
-
-# Example
-* building tash itself
-```YAML
-templates:
-  build:
-    - condition:
-        value: $GOOS
-        compare: windows
-        actions:
-          - env:
-              value: EXECUTABLE_EXT=.exe
-    - cmd:
-        exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH | string.default amd64}$EXECUTABLE_EXT
-
-tasks:
-  darwin_amd64:
-    description: |-
-      build darwin binary
-    actions:
-      - env:
-          value: GOOS=darwin
-      - template: build
-
-  linux_amd64:
-    description: |-
-      build linux binary
-    actions:
-      - env:
-          value: GOOS=linux
-      - template: build
-
-  windows_amd64:
-    description: |-
-      build windows binary
-    actions:
-      - env:
-          value: GOOS=windows
-      - template: build
-
-  all:
-    depends: [darwin_amd64, linux_amd64, windows_amd64]
 ```
 
 # License

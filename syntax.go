@@ -12,6 +12,10 @@ package main
 //	* ${ENV_NAME_NO_LIMIT [| filter[ arg]...]...}
 //	* ${"string literal" [| filter[ arg]...]...}
 // uses '\' to avoid escaping, such as '\$', '\$', '\\'
+//
+// predefined task-specific env:
+//    WORKDIR: task initial working directory
+//    TASK_NAME: task name
 
 type Configuration struct {
 	// defines global environment variables.
