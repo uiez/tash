@@ -174,6 +174,7 @@ func (r runner) runTask(name string, task Task, baseDir string) {
 		return
 	}
 
+	r.infoln("WorkDir:", workDir)
 	envs := newExpandEnvs()
 	envs.parsePairs(r.log(), os.Environ(), false)
 	envs.add(r.log(), "WORKDIR", workDir, false)
@@ -248,47 +249,42 @@ func (r runner) resourceIsValid(res ActionCopy, path string) bool {
 	return checkHash(r.log(), res.SourceUrl, res.Hash.Alg, res.Hash.Sig, fd)
 }
 
-func (r runner) runCopyAction(cpy ActionCopy, envs *ExpandEnvs) {
+func (r runner) runActionCopy(cpy ActionCopy, envs *ExpandEnvs) {
 	if !r.resourceNeedsSync(cpy) {
 		r.debugln("resource reuse.")
 		return
 	}
-	var sourceUrl string
-	if strings.Contains(cpy.SourceUrl, ":/") {
-		sourceUrl = cpy.SourceUrl
-	} else {
-		abspath, err := filepath.Abs(cpy.SourceUrl)
-		if err != nil {
-			r.fatalln("retrieve absolute source path failed:", cpy.SourceUrl, err)
-		}
-		sourceUrl = "file://" + abspath
-	}
 	var sourcePath string
-	ul, err := url.Parse(sourceUrl)
-	if err != nil {
-		r.fatalln("couldn't parse source url:", sourceUrl, err)
-	}
-	switch ul.Scheme {
-	case "file":
-		if runtime.GOOS == "windows" {
-			ul.Path = strings.TrimPrefix(ul.Path, "/")
-		}
-		sourcePath = ul.Path
-	case "http", "https":
-		path, err := downloadFile(cpy.SourceUrl)
+	if strings.Contains(cpy.SourceUrl, ":/") {
+		sourceUrl := cpy.SourceUrl
+		ul, err := url.Parse(sourceUrl)
 		if err != nil {
-			r.fatalln("download file failed:", cpy.SourceUrl, err)
-			return
+			r.fatalln("couldn't parse source url:", sourceUrl, err)
 		}
-		sourcePath = path
-	default:
-		r.fatalln("unsupported source url schema:", ul.Scheme)
+		switch ul.Scheme {
+		case "file":
+			sourcePath = ul.Path
+			if runtime.GOOS == "windows" {
+				sourcePath = strings.TrimPrefix(sourcePath, "/")
+			}
+		case "http", "https":
+			path, err := downloadFile(cpy.SourceUrl)
+			if err != nil {
+				r.fatalln("download file failed:", cpy.SourceUrl, err)
+				return
+			}
+			sourcePath = path
+		default:
+			r.fatalln("unsupported source url schema:", ul.Scheme)
+		}
+	} else {
+		sourcePath = cpy.SourceUrl
 	}
 	if !r.resourceIsValid(cpy, sourcePath) {
 		r.fatalln("resource source invalid:", cpy.SourceUrl)
 		return
 	}
-	err = copyPath(cpy.DestPath, sourcePath)
+	err := copyPath(cpy.DestPath, sourcePath)
 	if err != nil {
 		r.fatalln("resource copy failed:", cpy.SourceUrl, cpy.DestPath, err)
 		return
@@ -606,12 +602,12 @@ func (r runner) runActions(envs *ExpandEnvs, a []Action) {
 			r.runActionCmd(a.Cmd, envs)
 		}
 		if a.Copy.DestPath != "" {
-			err := envs.expandStrings(&a.Copy.DestPath, &a.Copy.SourceUrl)
+			err := envs.expandStrings(&a.Copy.SourceUrl, &a.Copy.DestPath)
 			if err != nil {
 				r.fatalln(err)
 			}
 			r.infoln("Copy:", a.Copy.SourceUrl, a.Copy.DestPath)
-			r.runCopyAction(a.Copy, envs)
+			r.runActionCopy(a.Copy, envs)
 		}
 		if a.Del != "" {
 			r.infoln("Del:", a.Del)

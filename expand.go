@@ -38,7 +38,7 @@ func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []Env) {
 		if env.Cmd != "" {
 			output := runCommand(log, e, env.Cmd, true, commandFds{})
 			if env.Name != "" {
-				e.add(log, env.Name, strings.TrimSpace(output), true)
+				e.add(log, env.Name, strings.TrimSpace(output), false)
 				continue
 			}
 
@@ -46,7 +46,7 @@ func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []Env) {
 			err := json.NewDecoder(strings.NewReader(output)).Decode(&kvs)
 			if err == nil {
 				for k, v := range kvs {
-					e.add(log, k, v, true)
+					e.add(log, k, v, false)
 				}
 				continue
 			}

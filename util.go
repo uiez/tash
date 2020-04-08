@@ -27,9 +27,9 @@ type logger interface {
 	fatalln(v ...interface{})
 }
 
-func stringAt(s []string, i int) string {
+func stringAtAndTrim(s []string, i int) string {
 	if i < len(s) {
-		return s[i]
+		return strings.TrimSpace(s[i])
 	}
 	return ""
 }
@@ -58,7 +58,7 @@ func stringSplitAndTrim(s, sep string) []string {
 
 func stringSplitAndTrimToPair(s, sep string) (s1, s2 string) {
 	secs := strings.SplitN(s, sep, 2)
-	return stringAt(secs, 0), stringAt(secs, 1)
+	return stringAtAndTrim(secs, 0), stringAtAndTrim(secs, 1)
 }
 
 func copyPath(dst, src string) error {
@@ -87,7 +87,7 @@ func copyPath(dst, src string) error {
 		defer dstFd.Close()
 		_, err = io.Copy(dstFd, srcFd)
 		if err == nil {
-			err = dstFd.Chmod(srcStat.Mode())
+			err = os.Chmod(dst, srcStat.Mode())
 		}
 		if err != nil {
 			os.Remove(dst)
@@ -126,6 +126,12 @@ func copyPath(dst, src string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("copy path tree failed: %w", err)
+	}
+	for dir, mode := range dirChmods {
+		err = os.Chmod(dir, mode)
+		if err != nil {
+			return fmt.Errorf("fix dir mod failed: %w", err)
+		}
 	}
 	return nil
 }
