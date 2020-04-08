@@ -220,9 +220,10 @@ func (r runner) resourceNeedsSync(cpy ActionCopy) bool {
 	if err != nil {
 		return true
 	}
-	if cpy.Hash.Sig == "" || info.IsDir() {
-		return false
+	if cpy.Hash.Sig == "" || info.IsDir() { // always sync
+		return true
 	}
+
 	fd, err := os.OpenFile(cpy.DestPath, os.O_RDONLY, 0)
 	if err != nil {
 		return true
@@ -257,7 +258,7 @@ func (r runner) runActionCopy(cpy ActionCopy, envs *ExpandEnvs) {
 		return
 	}
 	var sourcePath string
-	if strings.Contains(cpy.SourceUrl, ":/") {
+	if strings.Contains(cpy.SourceUrl, "://") {
 		sourceUrl := cpy.SourceUrl
 		ul, err := url.Parse(sourceUrl)
 		if err != nil {
@@ -609,6 +610,7 @@ func (r runner) runActions(envs *ExpandEnvs, a []Action) {
 			if err != nil {
 				r.fatalln(err)
 			}
+			ptrsToSlash(&a.Copy.SourceUrl, &a.Copy.DestPath)
 			r.infoln("Copy:", a.Copy.SourceUrl, a.Copy.DestPath)
 			r.runActionCopy(a.Copy, envs)
 		}
