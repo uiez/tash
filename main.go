@@ -10,9 +10,10 @@ import (
 )
 
 type Flags struct {
-	Conf  string   `names:"-c, --conf" usage:"config file, default tash.yaml in current/ancestor directory"`
-	Debug bool     `names:"-d, --debug" usage:"show debug messages"`
-	Tasks []string `args:"true" argsAnywhere:"true"`
+	Conf     string   `names:"-c, --conf" usage:"config file, default tash.yaml in current/ancestor directory"`
+	Debug    bool     `names:"-d, --debug" usage:"show debug messages"`
+	ShowArgs bool     `names:"--list-args" usage:"show task arguments"`
+	Tasks    []string `args:"true" argsAnywhere:"true"`
 }
 
 func (f *Flags) Metadata() map[string]flag.Flag {
@@ -59,9 +60,12 @@ func main() {
 	if err != nil {
 		log.fatalln("parsing config file failed:", flags.Conf, err)
 	}
-	if len(flags.Tasks) == 0 {
+	switch {
+	case len(flags.Tasks) == 0:
 		listTasks(&configs, log)
-	} else {
+	case flags.ShowArgs:
+		listTaskArgs(&configs, flags.Tasks, log)
+	default:
 		runTasks(&configs, flags.Tasks, log)
 	}
 }

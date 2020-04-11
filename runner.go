@@ -92,16 +92,45 @@ func listTasks(configs *Configuration, log indentLogger) {
 			names = append(names, name)
 		}
 		sort.Strings(names)
+		llog := log.addIndent()
 		for _, name := range names {
 			task := configs.Tasks[name]
-			buf.WriteString("    - ")
+			buf.WriteString("- ")
 			buf.WriteString(name)
 			if len(task.Depends) > 0 {
 				fmt.Fprintf(&buf, "(deps: %v)", task.Depends)
 			}
 			fmt.Fprintf(&buf, ": %s", task.Description)
-			log.infoln(buf.String())
+			llog.infoln(buf.String())
 			buf.Reset()
+		}
+	}
+}
+
+func listTaskArgs(configs *Configuration, names []string, log indentLogger) {
+	r := runner{
+		indentLogger: log,
+		configs:      configs,
+	}
+	for i, name := range names {
+		if i > 0 {
+			r.infoln() // create new line
+		}
+		r.infoln("Task:", name)
+		ar := r.addIndent()
+		task, ok := r.searchTask(name)
+		if !ok {
+			r.fatalln("task not found:", name)
+		}
+		if len(task.Args) > 0 {
+			for _, arg := range task.Args {
+				ar.infoln(fmt.Sprintf("- %s: %s", arg.Env, arg.Description))
+				if arg.Default != "" {
+					ar.infoln(fmt.Sprintf("  default: '%s'", arg.Default))
+				}
+			}
+		} else {
+			ar.infoln("no args")
 		}
 	}
 }
@@ -177,6 +206,20 @@ func (r runner) runTask(name string, task Task, baseDir string) {
 	r.infoln("WorkDir:", workDir)
 	envs := newExpandEnvs()
 	envs.parsePairs(r.log(), os.Environ(), false)
+	for _, arg := range task.Args {
+		if arg.Env == "" {
+			r.fatalln("empty task argument name")
+		}
+		val, err := envs.lookupAndFilter(arg.Env, nil)
+		if err != nil {
+			r.fatalln("lookup task argument value failed:", arg.Env, err)
+		}
+		if val == "" {
+			val = arg.Default
+			r.debugln("uses task argument default value:", arg.Env)
+			envs.add(r.log(), arg.Env, arg.Default, false)
+		}
+	}
 	envs.add(r.log(), "WORKDIR", workDir, false)
 	envs.add(r.log(), "HOST_OS", runtime.GOOS, false)
 	envs.add(r.log(), "HOST_ARCH", runtime.GOARCH, false)

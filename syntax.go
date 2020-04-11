@@ -48,6 +48,15 @@ type Env struct {
 	Cmd string
 }
 
+// defines task arguments
+type TaskArgument struct {
+	// task argument name as environment variable
+	Env         string
+	Description string
+	// argument default value
+	Default string
+}
+
 type Task struct {
 	Description string
 	// tasks depends on, couldn't be cycle-referenced.
@@ -55,6 +64,8 @@ type Task struct {
 	// current directory if empty
 	WorkDir string
 
+	// task arguments(environment)
+	Args []TaskArgument
 	// a sequence of task actions.
 	Actions []Action
 }

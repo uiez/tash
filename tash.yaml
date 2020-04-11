@@ -28,11 +28,19 @@ tasks:
 
   windows_amd64:
     description: |-
-      build windows binary
+      build windows 64bit binary
     actions:
       - env:
           value: GOOS=windows
       - template: build
 
+  windows_386:
+    description: |-
+      build windows 32bit binary
+    actions:
+      - env:
+          value: GOOS=windows; GOARCH=386
+      - template: build
+
   all:
-    depends: [darwin_amd64, linux_amd64, windows_amd64]
+    depends: [darwin_amd64, linux_amd64, windows_amd64, windows_386]
