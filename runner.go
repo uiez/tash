@@ -658,36 +658,39 @@ func (r runner) runActions(envs *ExpandEnvs, a []Action) {
 			r.runActionCopy(a.Copy, envs)
 		}
 		if a.Del != "" {
+			err := envs.expandStrings(&a.Del)
+			if err != nil {
+				r.fatalln(err)
+			}
 			r.infoln("Del:", a.Del)
-			err := os.RemoveAll(a.Del)
+			err = os.RemoveAll(a.Del)
 			if err != nil {
 				r.fatalln("task action delete failed:", a.Del, err)
 			}
 		}
 		if a.Replace.File != "" && len(a.Replace.Replaces) > 0 {
-			r.infoln("Replace:", a.Replace.File)
 			err := envs.expandStrings(&a.Replace.File)
 			if err != nil {
 				r.fatalln(err)
 			}
+			r.infoln("Replace:", a.Replace.File)
 			err = fileReplace(a.Replace.File, a.Replace.Replaces, a.Replace.Regexp)
 			if err != nil {
 				r.fatalln("task action replace failed:", a.Replace.File, err)
 			}
 		}
 		if a.Chmod.Path != "" {
-			r.infoln("Chmod:", a.Chmod.Path)
 			err := envs.expandStrings(&a.Chmod.Path)
 			if err != nil {
 				r.fatalln(err)
 			}
+			r.infoln("Chmod:", a.Chmod.Path)
 			err = os.Chmod(a.Chmod.Path, os.FileMode(a.Chmod.Mode))
 			if err != nil {
 				r.fatalln("chmod failed:", err)
 			}
 		}
 		if len(a.Chdir.Actions) > 0 {
-			r.infoln("Chdir:", a.Chdir.Dir)
 			wd, err := os.Getwd()
 			if err != nil {
 				r.fatalln("get current directory failed:", err)
@@ -696,6 +699,7 @@ func (r runner) runActions(envs *ExpandEnvs, a []Action) {
 			if err != nil {
 				r.fatalln(err)
 			}
+			r.infoln("Chdir:", a.Chdir.Dir)
 			err = os.Chdir(a.Chdir.Dir)
 			if err != nil {
 				r.fatalln("chdir failed:", err)

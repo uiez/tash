@@ -10,7 +10,7 @@ templates:
         exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH | string.default amd64}$EXECUTABLE_EXT
 
 tasks:
-  darwin_amd64:
+  darwin:
     description: |-
       build darwin binary
     actions:
@@ -18,7 +18,7 @@ tasks:
           value: GOOS=darwin
       - template: build
 
-  linux_amd64:
+  linux:
     description: |-
       build linux binary
     actions:
@@ -26,7 +26,7 @@ tasks:
           value: GOOS=linux
       - template: build
 
-  windows_amd64:
+  windows:
     description: |-
       build windows 64bit binary
     actions:
@@ -43,4 +43,4 @@ tasks:
       - template: build
 
   all:
-    depends: [darwin_amd64, linux_amd64, windows_amd64, windows_386]
+    depends: [darwin, linux, windows, windows]
