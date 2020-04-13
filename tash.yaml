@@ -7,12 +7,16 @@ templates:
           - env:
               value: EXECUTABLE_EXT=.exe
     - cmd:
-        exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH | string.default amd64}$EXECUTABLE_EXT
+        exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH}$EXECUTABLE_EXT
 
 tasks:
   darwin:
     description: |-
       build darwin binary
+    args:
+      - env: GOARCH
+        description: build architecture, amd64 or 386
+        default: amd64
     actions:
       - env:
           value: GOOS=darwin
@@ -21,6 +25,10 @@ tasks:
   linux:
     description: |-
       build linux binary
+    args:
+      - env: GOARCH
+        description: build architecture, amd64 or 386
+        default: amd64
     actions:
       - env:
           value: GOOS=linux
@@ -28,19 +36,14 @@ tasks:
 
   windows:
     description: |-
-      build windows 64bit binary
+      build windows binary
+    args:
+      - env: GOARCH
+        description: build architecture, amd64 or 386
+        default: amd64
     actions:
       - env:
           value: GOOS=windows
       - template: build
-
-  windows_386:
-    description: |-
-      build windows 32bit binary
-    actions:
-      - env:
-          value: GOOS=windows; GOARCH=386
-      - template: build
-
   all:
-    depends: [darwin, linux, windows, windows]
+    depends: [darwin, linux, windows]
