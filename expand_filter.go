@@ -2,11 +2,17 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
+
+	"github.com/mattn/go-zglob"
+	"github.com/zhuah/tash/syntax"
 )
 
 func stringRange(l int, args []string) (start, end int, err error) {
@@ -79,8 +85,10 @@ func stringReplace(val string, args []string, isRegexp bool) (string, error) {
 	return val, nil
 }
 
-var expandFilters = map[string]func(val string, args []string) (string, error){
-	ef_stringDefault: func(val string, args []string) (string, error) {
+var expandFilters = map[string]func(val string, args []string, envs *ExpandEnvs) (string, error){}
+
+func init() {
+	expandFilters[syntax.Ef_string_default] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 1 {
 			return "", fmt.Errorf("invalid args")
 		}
@@ -88,14 +96,26 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 			return args[0], nil
 		}
 		return val, nil
-	},
-	ef_stringTrimSpace: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_string_trimSpace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
 		return strings.TrimSpace(val), nil
-	},
-	ef_stringLower: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_string_trimPrefix] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 1 {
+			return "", fmt.Errorf("args invalid")
+		}
+		return strings.TrimPrefix(val, args[1]), nil
+	}
+	expandFilters[syntax.Ef_string_trimSuffix] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 1 {
+			return "", fmt.Errorf("args invalid")
+		}
+		return strings.TrimSuffix(val, args[1]), nil
+	}
+	expandFilters[syntax.Ef_string_lower] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		rs := []rune(val)
 		start, end, err := stringRange(len(rs), args)
 		if err != nil {
@@ -105,8 +125,8 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 			v[i] = unicode.ToLower(v[i])
 		}
 		return string(rs), nil
-	},
-	ef_stringUpper: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_string_upper] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		rs := []rune(val)
 		start, end, err := stringRange(len(rs), args)
 		if err != nil {
@@ -116,33 +136,78 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 			v[i] = unicode.ToUpper(v[i])
 		}
 		return string(rs), nil
-	},
-	ef_stringSlice: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_string_slice] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		rs := []rune(val)
 		start, end, err := stringRange(len(rs), args)
 		if err != nil {
 			return "", err
 		}
 		return string(rs[start : start+end]), nil
-	},
-	ef_stringReplace: func(val string, args []string) (string, error) {
-		return stringReplace(val, args, false)
-	},
-	ef_stringRegexpReplace: func(val string, args []string) (string, error) {
-		return stringReplace(val, args, true)
-	},
-	ef_fileGlob: func(val string, args []string) (string, error) {
-		if len(args) != 0 {
-			return "", fmt.Errorf("args is not needed")
+	}
+	expandFilters[syntax.Ef_string_at] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var sep string
+		var index string
+		switch len(args) {
+		case 1:
+			sep = " "
+			index = args[0]
+		case 2:
+			sep = args[0]
+			index = args[1]
+		default:
+			return "", fmt.Errorf("args invalid")
 		}
-		matched, err := filepath.Glob(val)
+
+		secs := stringSplitAndTrimFilterSpace(val, sep)
+		start, _, err := stringRange(len(secs), []string{index})
+		if err != nil {
+			return "", err
+		}
+		return secs[start], nil
+	}
+	expandFilters[syntax.Ef_string_replace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		return stringReplace(val, args, false)
+	}
+	expandFilters[syntax.Ef_string_regexpReplace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		return stringReplace(val, args, true)
+	}
+	expandFilters[syntax.Ef_string_sort] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var sep string
+		switch len(args) {
+		case 0:
+		case 1:
+			sep = args[1]
+		default:
+			return "", fmt.Errorf("args invalid")
+		}
+		if sep == "" {
+			sep = " "
+		}
+		secs := stringSplitAndTrimFilterSpace(val, sep)
+		sort.Strings(secs)
+		return strings.Join(secs, sep), nil
+	}
+	expandFilters[syntax.Ef_file_glob] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var sep string
+		switch len(args) {
+		case 0:
+		case 1:
+			sep = args[1]
+		default:
+			return "", fmt.Errorf("args invalid")
+		}
+		if sep == "" {
+			sep = " "
+		}
+		matched, err := zglob.Glob(val)
 		if err != nil {
 			return "", fmt.Errorf("invalid file pattern: %s, %w", val, err)
 		}
 		matched = sliceToSlash(matched)
-		return strings.Join(matched, " "), nil
-	},
-	ef_fileAbspath: func(val string, args []string) (string, error) {
+		return strings.Join(matched, sep), nil
+	}
+	expandFilters[syntax.Ef_file_abspath] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
@@ -151,29 +216,78 @@ var expandFilters = map[string]func(val string, args []string) (string, error){
 			return "", fmt.Errorf("get absolute path failed: %s, %w", val, err)
 		}
 		return stringToSlash(abspath), nil
-	},
-	ef_fileDirname: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_file_dirname] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
 		return stringToSlash(filepath.Dir(val)), nil
-	},
-	ef_fileBasename: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_file_basename] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
 		return filepath.Base(val), nil
-	},
-	ef_fileToSlash: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_file_ext] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return filepath.Ext(val), nil
+	}
+	expandFilters[syntax.Ef_file_noext] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return strings.TrimSuffix(val, filepath.Ext(val)), nil
+	}
+	expandFilters[syntax.Ef_file_toSlash] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
 		return filepath.ToSlash(val), nil
-	},
-	ef_fileFromSlash: func(val string, args []string) (string, error) {
+	}
+	expandFilters[syntax.Ef_file_fromSlash] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 0 {
 			return "", fmt.Errorf("args is not needed")
 		}
 		return filepath.FromSlash(val), nil
-	},
+	}
+	expandFilters[syntax.Ef_file_content] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		content, err := ioutil.ReadFile(val)
+		if err != nil {
+			return "", err
+		}
+		return string(content), nil
+	}
+	expandFilters[syntax.Ef_date_now] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		switch len(args) {
+		case 0:
+			return strconv.FormatInt(time.Now().Unix(), 10), nil
+		case 1:
+			return time.Now().Format(args[1]), nil
+		default:
+			return "", fmt.Errorf("args invalid")
+		}
+	}
+	expandFilters[syntax.Ef_date_format] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 1 {
+			return "", fmt.Errorf("args invalid")
+		}
+		timestamp, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return "", err
+		}
+		t := time.Unix(timestamp, 0).In(time.Local)
+		return t.Format(args[1]), nil
+	}
+	expandFilters[syntax.Ef_cmd_output] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args is not needed")
+		}
+		return getCmdOutput(envs, val)
+	}
 }

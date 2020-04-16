@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cosiner/argv"
+	"github.com/zhuah/tash/syntax"
 )
 
 type ExpandEnvs struct {
@@ -23,7 +24,7 @@ func newExpandEnvs() *ExpandEnvs {
 
 func (e *ExpandEnvs) add(log logger, k, v string, expand bool) {
 	if expand {
-		err := e.expandStrings(&v)
+		err := e.expandStringPtrs(&v)
 		if err != nil {
 			log.fatalln(err)
 		}
@@ -33,17 +34,21 @@ func (e *ExpandEnvs) add(log logger, k, v string, expand bool) {
 	e.envs[k] = v
 }
 
-func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []Env) {
+func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []syntax.Env) {
 	for _, env := range envs {
 		if env.Cmd != "" {
-			output := runCommand(log, e, env.Cmd, true, commandFds{})
+			output, err := getCmdOutput(e, env.Cmd)
+			if err != nil {
+				log.fatalln("get command output failed:", env.Cmd, err)
+				return
+			}
 			if env.Name != "" {
 				e.add(log, env.Name, strings.TrimSpace(output), false)
 				continue
 			}
 
 			kvs := make(map[string]string)
-			err := json.NewDecoder(strings.NewReader(output)).Decode(&kvs)
+			err = json.NewDecoder(strings.NewReader(output)).Decode(&kvs)
 			if err == nil {
 				for k, v := range kvs {
 					e.add(log, k, v, false)
@@ -94,7 +99,18 @@ func (e *ExpandEnvs) Exist(k string) bool {
 	return has
 }
 
-func (e *ExpandEnvs) expandStrings(s ...*string) error {
+func (e *ExpandEnvs) expandStringSlice(s []string) error {
+	for i := range s {
+		v, err := e.expandString(s[i])
+		if err != nil {
+			return fmt.Errorf("expand string failed: %s, %w", s[i], err)
+		}
+		s[i] = v
+	}
+	return nil
+}
+
+func (e *ExpandEnvs) expandStringPtrs(s ...*string) error {
 	for _, s := range s {
 		v, err := e.expandString(*s)
 		if err != nil {
@@ -134,7 +150,7 @@ func (e *ExpandEnvs) lookupAndFilter(name string, filters []string) (string, err
 		if !has {
 			return "", fmt.Errorf("unrecognized expand filter: %s", filter)
 		}
-		val, err = filterFunc(val, argv[0][1:])
+		val, err = filterFunc(val, argv[0][1:], e)
 		if err != nil {
 			return "", fmt.Errorf("execute expand filter failed: %s, %w", filter, err)
 		}

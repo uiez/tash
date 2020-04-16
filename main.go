@@ -7,6 +7,7 @@ import (
 
 	"github.com/cosiner/flag"
 	"github.com/ghodss/yaml"
+	"github.com/zhuah/tash/syntax"
 )
 
 type Flags struct {
@@ -47,15 +48,13 @@ func main() {
 			dir = parent
 		}
 	}
-	log := indentLogger{
-		debug: flags.Debug,
-	}
+	log := newLogger(flags.Debug)
 	content, err := ioutil.ReadFile(flags.Conf)
 	if err != nil {
 		log.fatalln("read config file failed:", flags.Conf, err)
 	}
 
-	var configs Configuration
+	var configs syntax.Configuration
 	err = yaml.Unmarshal(content, &configs)
 	if err != nil {
 		log.fatalln("parsing config file failed:", flags.Conf, err)

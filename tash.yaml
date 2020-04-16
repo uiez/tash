@@ -10,6 +10,13 @@ templates:
         exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH}$EXECUTABLE_EXT
 
 tasks:
+  native:
+    description: |-
+      build native binary
+    actions:
+      - cmd:
+          exec: go build -ldflags "-w -s"
+
   darwin:
     description: |-
       build darwin binary
@@ -46,4 +53,23 @@ tasks:
           value: GOOS=windows
       - template: build
   all:
-    depends: [darwin, linux, windows]
+    description: |-
+      build darwin,linux,windows binary
+    actions:
+      - task:
+          name: darwin
+      - task:
+          name: linux
+      - task:
+          name: windows
+
+  watch:
+    description: |-
+      watch fs changes and build native binary
+    actions:
+      - watch:
+          dirs: [.]
+          files: [./*.go]
+          actions:
+            - task:
+                name: native

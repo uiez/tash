@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/cosiner/argv"
+	"github.com/zhuah/tash/syntax"
 )
 
 type logger interface {
@@ -57,8 +58,39 @@ func stringSplitAndTrim(s, sep string) []string {
 }
 
 func stringSplitAndTrimToPair(s, sep string) (s1, s2 string) {
-	secs := strings.SplitN(s, sep, 2)
+	var secs []string
+	if sep == " " {
+		secs = stringSplitAndTrimFilterSpace(s, sep)
+	} else {
+		secs = strings.SplitN(s, sep, 2)
+	}
 	return stringAtAndTrim(secs, 0), stringAtAndTrim(secs, 1)
+}
+
+func copyFile(dst, src string) error {
+	srcFd, err := os.OpenFile(src, os.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	srcStat, err := srcFd.Stat()
+	if err != nil {
+		return err
+	}
+	defer srcFd.Close()
+	dstFd, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer dstFd.Close()
+	_, err = io.Copy(dstFd, srcFd)
+	if err == nil {
+		err = os.Chmod(dst, srcStat.Mode())
+	}
+	if err != nil {
+		os.Remove(dst)
+		return err
+	}
+	return nil
 }
 
 func copyPath(dst, src string) error {
@@ -70,30 +102,9 @@ func copyPath(dst, src string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove dst path failed: %w", err)
 	}
-	copyFile := func(dst, src string) error {
-		srcFd, err := os.OpenFile(src, os.O_RDONLY, 0)
-		if err != nil {
-			return err
-		}
-		srcStat, err := srcFd.Stat()
-		if err != nil {
-			return err
-		}
-		defer srcFd.Close()
-		dstFd, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			return err
-		}
-		defer dstFd.Close()
-		_, err = io.Copy(dstFd, srcFd)
-		if err == nil {
-			err = os.Chmod(dst, srcStat.Mode())
-		}
-		if err != nil {
-			os.Remove(dst)
-			return err
-		}
-		return nil
+	err = os.MkdirAll(filepath.Dir(dst), 0755)
+	if err != nil {
+		return fmt.Errorf("create dst path dirs failed: %w", err)
 	}
 	if !stat.IsDir() {
 		err = os.MkdirAll(filepath.Dir(dst), 0755)
@@ -139,11 +150,11 @@ func copyPath(dst, src string) error {
 func checkHash(log logger, path string, alg, sig string, r io.Reader) bool {
 	var hashCreator func() hash.Hash
 	switch alg {
-	case ResourceHashAlgSha1:
+	case syntax.ResourceHashAlgSha1:
 		hashCreator = sha1.New
-	case ResourceHashAlgMD5:
+	case syntax.ResourceHashAlgMD5:
 		hashCreator = md5.New
-	case ResourceHashAlgSha256:
+	case syntax.ResourceHashAlgSha256:
 		hashCreator = sha256.New
 	}
 	if hashCreator == nil || sig == "" {
@@ -184,26 +195,21 @@ type commandFds struct {
 	Stderr io.Writer
 }
 
-func runCommand(log indentLogger, vars *ExpandEnvs, cmd string, needsOutput bool, fds commandFds) string {
-	osEnvs := vars.formatEnvs()
+func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds) (string, error) {
+	osEnvs := envs.formatEnvs()
 	sections, err := argv.Argv(
 		cmd,
 		func(cmd string) (string, error) {
-			output := runCommand(log.addIndent(), vars, cmd, true, commandFds{})
-			return output, nil
+			return getCmdOutput(envs, cmd)
 		},
-		func(s string) (string, error) {
-			return vars.expandString(s)
-		},
+		envs.expandString,
 	)
 	if err != nil {
-		log.fatalln("parse command failed:", cmd, err)
-		return ""
+		return "", fmt.Errorf("parse command string failed: %s", err)
 	}
 	cmds, err := argv.Cmds(sections...)
 	if err != nil {
-		log.fatalln("create command failed:", cmd, err)
-		return ""
+		return "", fmt.Errorf("build command failed: %s", err)
 	}
 	for i := range cmds {
 		cmds[i].Env = osEnvs
@@ -215,13 +221,16 @@ func runCommand(log indentLogger, vars *ExpandEnvs, cmd string, needsOutput bool
 	}
 	err = argv.Pipe(fds.Stdin, fds.Stdout, fds.Stderr, cmds...)
 	if err != nil {
-		log.fatalln("run command failed:", cmd, err)
-		return ""
+		return "", fmt.Errorf("run command failed: %s", err)
 	}
 	if needsOutput {
-		return fds.Stdout.(*bytes.Buffer).String()
+		return fds.Stdout.(*bytes.Buffer).String(), nil
 	}
-	return ""
+	return "", nil
+}
+
+func getCmdOutput(envs *ExpandEnvs, cmd string) (string, error) {
+	return runCommand(envs, cmd, true, commandFds{})
 }
 
 type conditionContext struct {
@@ -233,15 +242,15 @@ type conditionContext struct {
 
 func checkCondition(ctx *conditionContext, value, operator, compare string) bool {
 	fixAlias := func(o *string) {
-		if a, has := operatorAlias[*o]; has {
+		if a, has := syntax.OperatorAlias[*o]; has {
 			*o = a
 		}
 	}
 	if operator == "" {
 		if ctx.compareOrigin == "" {
-			operator = op_bool_true
+			operator = syntax.Op_bool_true
 		} else {
-			operator = op_string_equal
+			operator = syntax.Op_string_equal
 		}
 	}
 	var (
@@ -250,7 +259,7 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 	if idx := strings.Index(operator, " "); idx > 0 {
 		n, o := stringSplitAndTrimToPair(operator, " ")
 		fixAlias(&n)
-		if n == op_bool_not {
+		if n == syntax.Op_bool_not {
 			not = true
 			operator = o
 		}
@@ -258,27 +267,27 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 	fixAlias(&operator)
 	var ok bool
 	switch operator {
-	case op_string_regexp:
+	case syntax.Op_string_regexp:
 		r, err := regexp.CompilePOSIX(compare)
 		if err != nil {
 			ctx.log.fatalln("compile regexp failed:", compare, err)
 		}
 		ok = r.MatchString(value)
 
-	case op_string_greaterThan:
+	case syntax.Op_string_greaterThan:
 		ok = value > compare
-	case op_string_greaterThanOrEqual:
+	case syntax.Op_string_greaterThanOrEqual:
 		ok = value >= compare
-	case op_string_equal:
+	case syntax.Op_string_equal:
 		ok = value == compare
-	case op_string_notEqual:
+	case syntax.Op_string_notEqual:
 		ok = value != compare
-	case op_string_lessThanOrEqual:
+	case syntax.Op_string_lessThanOrEqual:
 		ok = value <= compare
-	case op_string_lessThan:
+	case syntax.Op_string_lessThan:
 		ok = value < compare
 
-	case op_number_greaterThan, op_number_greaterThanOrEqual, op_number_equal, op_number_notEqual, op_number_lessThanOrEqual, op_number_lessThan:
+	case syntax.Op_number_greaterThan, syntax.Op_number_greaterThanOrEqual, syntax.Op_number_equal, syntax.Op_number_notEqual, syntax.Op_number_lessThanOrEqual, syntax.Op_number_lessThan:
 		parseInt := func(s string) (int64, error) {
 			for prefix, base := range map[string]int{
 				"0x": 16,
@@ -305,29 +314,29 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 			ctx.log.fatalln("convert values to float number failed:", value, compare)
 		}
 		switch operator {
-		case op_number_greaterThan:
+		case syntax.Op_number_greaterThan:
 			ok = v1 > v2
-		case op_number_greaterThanOrEqual:
+		case syntax.Op_number_greaterThanOrEqual:
 			ok = v1 >= v2
-		case op_number_equal:
+		case syntax.Op_number_equal:
 			ok = v1 == v2
-		case op_number_notEqual:
+		case syntax.Op_number_notEqual:
 			ok = v1 != v2
-		case op_number_lessThanOrEqual:
+		case syntax.Op_number_lessThanOrEqual:
 			ok = v1 <= v2
-		case op_number_lessThan:
+		case syntax.Op_number_lessThan:
 			ok = v1 < v2
 		}
-	case op_file_newerThan, op_file_olderThan:
+	case syntax.Op_file_newerThan, syntax.Op_file_olderThan:
 		s1, e1 := os.Stat(value)
 		s2, e2 := os.Stat(compare)
 		if e1 != nil || e2 != nil {
 			ctx.log.fatalln("access files failed:", e1, e2)
 		}
 		switch operator {
-		case op_file_newerThan:
+		case syntax.Op_file_newerThan:
 			ok = s1.ModTime().After(s2.ModTime())
-		case op_file_olderThan:
+		case syntax.Op_file_olderThan:
 			ok = s1.ModTime().Before(s2.ModTime())
 		}
 	//case "-ef":
@@ -355,11 +364,11 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 			})
 		}
 		switch operator {
-		case op_string_notEmpty:
+		case syntax.Op_string_notEmpty:
 			ok = value != ""
-		case op_string_empty:
+		case syntax.Op_string_empty:
 			ok = value == ""
-		case op_bool_true, op_bool_not:
+		case syntax.Op_bool_true, syntax.Op_bool_not:
 			switch strings.ToLower(value) {
 			case "true", "yes", "1":
 				ok = true
@@ -368,60 +377,60 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 			default:
 				ctx.log.fatalln("invalid boolean value:", ctx.valueOrigin, value)
 			}
-			if operator == op_bool_not {
+			if operator == syntax.Op_bool_not {
 				ok = !ok
 			}
-		case op_env_defined:
+		case syntax.Op_env_defined:
 			ok = ctx.envs.Exist(value)
-		case op_file_exist:
+		case syntax.Op_file_exist:
 			ok = checkFileStat(nil)
-		case op_file_blockDevice:
+		case syntax.Op_file_blockDevice:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeDevice != 0 && mode&os.ModeCharDevice == 0
 			})
-		case op_file_charDevice:
+		case syntax.Op_file_charDevice:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeDevice != 0 && mode&os.ModeCharDevice != 0
 			})
-		case op_file_dir:
+		case syntax.Op_file_dir:
 			ok = checkFileStat(func(stat os.FileInfo) bool {
 				return stat.IsDir()
 			})
-		case op_file_regular:
+		case syntax.Op_file_regular:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode.IsRegular()
 			})
-		case op_file_setgid:
+		case syntax.Op_file_setgid:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeSetgid != 0
 			})
 		//case "-G":
-		case op_file_symlink:
+		case syntax.Op_file_symlink:
 			ok = checkFileLstatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeSymlink != 0
 			})
-		case op_file_sticky:
+		case syntax.Op_file_sticky:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeSticky != 0
 			})
 		//case "-N":
 		//case "-O":
-		case op_file_namedPipe:
+		case syntax.Op_file_namedPipe:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeNamedPipe != 0
 			})
 		//case "-r":
 
-		case op_file_notEmpty:
+		case syntax.Op_file_notEmpty:
 			ok = checkFileStat(func(stat os.FileInfo) bool {
 				return stat.Size() > 0
 			})
-		case op_file_socket:
+		case syntax.Op_file_socket:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeSocket != 0
 			})
 		//case "-t":
-		case op_file_setuid:
+		case syntax.Op_file_setuid:
 			ok = checkFileStatMode(func(mode os.FileMode) bool {
 				return mode&os.ModeSetuid != 0
 			})
@@ -438,46 +447,68 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 	return ok
 }
 
-func fileReplace(path string, args map[string]string, isRegexp bool) error {
+func fileReplacer(args []string, isRegexp bool) (func(path string) error, error) {
 	if len(args) == 0 {
-		return nil
+		return func(path string) error {
+			return nil
+		}, nil
 	}
-	var fileContent []byte
-	var err error
-	fileContent, err = ioutil.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read file failed: %w", err)
+	withFileContent := func(fn func([]byte) []byte) func(path string) error {
+		return func(path string) error {
+			fd, err := os.OpenFile(path, os.O_RDWR, 0)
+			if err != nil {
+				return err
+			}
+			defer fd.Close()
+			content, err := ioutil.ReadAll(fd)
+			if err != nil {
+				return err
+			}
+			content = fn(content)
+			_, err = fd.Seek(0, io.SeekStart)
+			if err == nil {
+				err = fd.Truncate(0)
+			}
+			if err == nil {
+				_, err = fd.Write(content)
+			}
+			return err
+		}
 	}
 	if !isRegexp {
-		if len(args) == 1 {
-			var old, new string
-			for k, v := range args {
-				old, new = k, v
-			}
-			fileContent = bytes.ReplaceAll(fileContent, []byte(old), []byte(new))
-		} else {
-			var oldnews []string
-			for k, v := range args {
-				oldnews = append(oldnews, k, v)
-			}
-			r := strings.NewReplacer(oldnews...)
-			fileContent = []byte(r.Replace(string(fileContent)))
+		if len(args) == 2 {
+			o := []byte(args[0])
+			n := []byte(args[1])
+			return withFileContent(func(data []byte) []byte {
+				return bytes.ReplaceAll(data, o, n)
+			}), nil
 		}
-	} else {
-		for k, v := range args {
-			r, err := regexp.CompilePOSIX(k)
-			if err != nil {
-				return fmt.Errorf("compile regexp failed: %s, %w", k, err)
-			}
-			fileContent = r.ReplaceAll(fileContent, []byte(v))
+		r := strings.NewReplacer(args...)
+		return withFileContent(func(data []byte) []byte {
+			return []byte(r.Replace(string(data)))
+		}), nil
+	}
+
+	type regPair struct {
+		R       *regexp.Regexp
+		Replace []byte
+	}
+	var regs []regPair
+	for i := 0; i < len(args); i += 2 {
+		r, err := regexp.CompilePOSIX(args[i])
+		if err != nil {
+			return nil, fmt.Errorf("compile regexp failed: %s, %w", args[i], err)
 		}
+		regs = append(regs, regPair{R: r, Replace: []byte(args[i+1])})
 	}
-	err = ioutil.WriteFile(path, fileContent, 0644)
-	if err != nil {
-		return fmt.Errorf("write file failed: %w", err)
-	}
-	return nil
+	return withFileContent(func(data []byte) []byte {
+		for _, p := range regs {
+			data = p.R.ReplaceAll(data, p.Replace)
+		}
+		return data
+	}), nil
 }
+
 func stringToSlash(s string) string {
 	return filepath.ToSlash(s)
 }
@@ -493,4 +524,18 @@ func sliceToSlash(paths []string) []string {
 		paths[i] = filepath.ToSlash(paths[i])
 	}
 	return paths
+}
+
+func openFile(name string, append bool) (*os.File, error) {
+	flags := os.O_WRONLY | os.O_CREATE
+	if append {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	err := os.MkdirAll(filepath.Dir(name), 0755)
+	if err != nil {
+		return nil, fmt.Errorf("create parent directories failed: %w", err)
+	}
+	return os.OpenFile(name, flags, 00644)
 }
