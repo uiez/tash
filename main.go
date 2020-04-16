@@ -13,7 +13,7 @@ import (
 type Flags struct {
 	Conf     string   `names:"-c, --conf" usage:"config file, default tash.yaml in current/ancestor directory"`
 	Debug    bool     `names:"-d, --debug" usage:"show debug messages"`
-	ShowArgs bool     `names:"--list-args" usage:"show task arguments"`
+	ShowArgs bool     `names:"-a, --args" usage:"show task args"`
 	Tasks    []string `args:"true" argsAnywhere:"true"`
 }
 
@@ -61,9 +61,7 @@ func main() {
 	}
 	switch {
 	case len(flags.Tasks) == 0:
-		listTasks(&configs, log)
-	case flags.ShowArgs:
-		listTaskArgs(&configs, flags.Tasks, log)
+		listTasks(&configs, log, flags.ShowArgs)
 	default:
 		runTasks(&configs, flags.Tasks, log)
 	}

@@ -88,7 +88,7 @@ func (w indentLogger) debugln(v ...interface{}) {
 	}
 }
 
-func listTasks(configs *syntax.Configuration, log indentLogger) {
+func listTasks(configs *syntax.Configuration, log indentLogger, showArgs bool) {
 	if len(configs.Tasks) == 0 {
 		log.infoln("no tasks defined.")
 	} else {
@@ -102,35 +102,20 @@ func listTasks(configs *syntax.Configuration, log indentLogger) {
 		for _, name := range names {
 			task := configs.Tasks[name]
 			llog.infoln(fmt.Sprintf("- %s: %s", name, task.Description))
-		}
-	}
-}
+			if !showArgs {
+				continue
+			}
 
-func listTaskArgs(configs *syntax.Configuration, names []string, log indentLogger) {
-	r := runner{
-		indentLogger: log,
-		configs:      configs,
-	}
-	for i, name := range names {
-		if i > 0 {
-			r.infoln() // create new line
-		}
-		r.infoln("Task:", name)
-		ar := r.addIndent()
-		task, ok := r.searchTask(name)
-		if !ok {
-			r.fatalln("task not found:", name)
-			return
-		}
-		if len(task.Args) > 0 {
-			for _, arg := range task.Args {
-				ar.infoln(fmt.Sprintf("- %s: %s", arg.Env, arg.Description))
-				if arg.Default != "" {
-					ar.infoln(fmt.Sprintf("  default: '%s'", arg.Default))
+			alog := llog.addIndent()
+			if len(task.Args) > 0 {
+				alog.infoln("args:")
+				for _, arg := range task.Args {
+					alog.infoln(fmt.Sprintf("- %s: %s", arg.Env, arg.Description))
+					if arg.Default != "" {
+						alog.infoln(fmt.Sprintf("  default: '%s'", arg.Default))
+					}
 				}
 			}
-		} else {
-			ar.infoln("no args")
 		}
 	}
 }

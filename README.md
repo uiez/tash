@@ -14,8 +14,8 @@ simple, declarative, cross-platform, doesn't depends on unix shell or makefile.
 by default, tash will lookup `tash.yaml` under current/ancestor directories, or user can use `-c/--conf` option.
 
 # Usage
-* list tasks: just run `tash`
-* run tasks: `tash TASK_NAME... [--debug]`
+* list tasks: just run `tash [-a/--args]`
+* run tasks: `tash TASK_NAME... [-d/--debug]`
 * show help: `tash -h`
 
 # Example
