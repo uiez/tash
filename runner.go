@@ -88,7 +88,7 @@ func (w indentLogger) debugln(v ...interface{}) {
 	}
 }
 
-func listTasks(configs *syntax.Configuration, log indentLogger, taskNames []string, showArgs bool) {
+func listTasks(configs *Configuration, log indentLogger, taskNames []string, showArgs bool) {
 	if len(configs.Tasks) == 0 {
 		log.infoln("no tasks defined.")
 	} else {
@@ -128,7 +128,7 @@ func listTasks(configs *syntax.Configuration, log indentLogger, taskNames []stri
 	}
 }
 
-func runTasks(configs *syntax.Configuration, log indentLogger, names []string) {
+func runTasks(configs *Configuration, log indentLogger, names []string) {
 	if len(names) == 0 {
 		log.fatalln("no tasks to run")
 		return
@@ -155,13 +155,13 @@ type runner struct {
 	parent *runner
 
 	indentLogger
-	configs      *syntax.Configuration
+	configs      *Configuration
 	noExitOnFail bool
 
 	failed bool
 }
 
-func newRunner(parent *runner, log indentLogger, configs *syntax.Configuration) *runner {
+func newRunner(parent *runner, log indentLogger, configs *Configuration) *runner {
 	r := runner{
 		parent:       parent,
 		indentLogger: log,

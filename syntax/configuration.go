@@ -1,6 +1,10 @@
 package syntax
 
 type Configuration struct {
+	// import other config files, can be both absolute or relative path.
+	// relative path is based on current file directory.
+	Imports []string
+
 	// defines global environment variables.
 	Envs []Env
 	// defines templates(action list) can be referenced from tasks.
