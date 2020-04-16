@@ -11,17 +11,24 @@ import (
 )
 
 type Flags struct {
-	Conf     string   `names:"-c, --conf" usage:"config file, default tash.yaml in current/ancestor directory"`
-	Debug    bool     `names:"-d, --debug" usage:"show debug messages"`
-	ShowArgs bool     `names:"-a, --args" usage:"show task args"`
-	Tasks    []string `args:"true" argsAnywhere:"true"`
+	Conf string `names:"-c, --conf" usage:"config file, default tash.yaml in current/ancestor directory"`
+	List struct {
+		Enable bool
+
+		ShowArgs bool     `names:"-a, --args" usage:"show task args"`
+		Tasks    []string `args:"true" argsAnywhere:"true"`
+	} `arglist:"TASK... [OPTION]..."`
+
+	// global command
+	Debug bool     `names:"-d, --debug" usage:"show debug messages"`
+	Tasks []string `args:"true" argsAnywhere:"true"`
 }
 
 func (f *Flags) Metadata() map[string]flag.Flag {
 	return map[string]flag.Flag{
 		"": {
 			Desc:    "task runner",
-			Arglist: "[TASK]...",
+			Arglist: "TASK... [OPTION]... | list [TASK]... [OPTION]...",
 		},
 	}
 }
@@ -60,9 +67,11 @@ func main() {
 		log.fatalln("parsing config file failed:", flags.Conf, err)
 	}
 	switch {
-	case len(flags.Tasks) == 0:
-		listTasks(&configs, log, flags.ShowArgs)
 	default:
-		runTasks(&configs, flags.Tasks, log)
+		fallthrough
+	case flags.List.Enable:
+		listTasks(&configs, log, flags.List.Tasks, flags.List.ShowArgs)
+	case len(flags.Tasks) > 0:
+		runTasks(&configs, log, flags.Tasks)
 	}
 }

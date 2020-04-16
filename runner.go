@@ -88,19 +88,27 @@ func (w indentLogger) debugln(v ...interface{}) {
 	}
 }
 
-func listTasks(configs *syntax.Configuration, log indentLogger, showArgs bool) {
+func listTasks(configs *syntax.Configuration, log indentLogger, taskNames []string, showArgs bool) {
 	if len(configs.Tasks) == 0 {
 		log.infoln("no tasks defined.")
 	} else {
-		log.infoln("available tasks:")
-		var names []string
-		for name := range configs.Tasks {
-			names = append(names, name)
+		if len(taskNames) == 0 {
+			log.infoln("available tasks:")
+			var names []string
+			for name := range configs.Tasks {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			taskNames = names
 		}
-		sort.Strings(names)
 		llog := log.addIndent()
-		for _, name := range names {
-			task := configs.Tasks[name]
+		for _, name := range taskNames {
+			task, has := configs.Tasks[name]
+			if !has {
+				log.fatalln("task not found: %s", name)
+				return
+			}
+
 			llog.infoln(fmt.Sprintf("- %s: %s", name, task.Description))
 			if !showArgs {
 				continue
@@ -120,7 +128,11 @@ func listTasks(configs *syntax.Configuration, log indentLogger, showArgs bool) {
 	}
 }
 
-func runTasks(configs *syntax.Configuration, names []string, log indentLogger) {
+func runTasks(configs *syntax.Configuration, log indentLogger, names []string) {
+	if len(names) == 0 {
+		log.fatalln("no tasks to run")
+		return
+	}
 	currDir, err := os.Getwd()
 	if err != nil {
 		log.fatalln("get current directory failed:", err)
