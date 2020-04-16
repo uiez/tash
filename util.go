@@ -251,7 +251,7 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 		}
 	}
 	if operator == "" {
-		if compareField != nil {
+		if compareField == nil {
 			operator = syntax.Op_bool_true
 		} else {
 			operator = syntax.Op_string_equal
