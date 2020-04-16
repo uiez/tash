@@ -105,7 +105,7 @@ func listTasks(configs *Configuration, log indentLogger, taskNames []string, sho
 		for _, name := range taskNames {
 			task, has := configs.Tasks[name]
 			if !has {
-				log.fatalln("task not found: %s", name)
+				log.fatalln("task not found:", name)
 				return
 			}
 

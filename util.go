@@ -268,7 +268,7 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 	case syntax.Op_string_regexp:
 		r, err := regexp.CompilePOSIX(compare)
 		if err != nil {
-			return false, fmt.Errorf("compile regexp failed: %s, %s", compareField, err)
+			return false, fmt.Errorf("compile regexp failed: %s, %s", compare, err)
 		}
 		ok = r.MatchString(value)
 
@@ -309,7 +309,7 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 			v2, err2 = parseInt(v)
 		}
 		if err1 != nil || err2 != nil {
-			return false, fmt.Errorf("convert values to float number failed: %s, %s", value, compareField)
+			return false, fmt.Errorf("convert values to float number failed: %s, %s", value, compare)
 		}
 		switch operator {
 		case syntax.Op_number_greaterThan:
