@@ -266,7 +266,7 @@ func (r *runner) runTask(name string, task syntax.Task, baseDir string) {
 		return
 	}
 
-	r.infoln("WorkDir:", workDir)
+	r.infoln("workdir:", workDir)
 	envs := r.createTaskEnvs(name, task, workDir)
 	r.runActions(envs, task.Actions)
 }
@@ -1055,7 +1055,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 					r.fatalln(err)
 					return
 				}
-				r.infoln("Task:", a.Task)
+				r.infoln("Task:", a.Task.Name)
 				r.runActionTask(a.Task, envs)
 			}
 		})
