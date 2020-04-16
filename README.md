@@ -113,6 +113,7 @@ defined in [syntax](/syntax) folder.
         - [comparision operators](/syntax/operator.go)
     - [action reference/reusing](/syntax/action_ref.go)
     
+* [built in environment variables](/syntax/builtin_env.go)
 * [environment variable expanding](/syntax/expanding.go)
     * [expanding filters](/syntax/expand_filter.go)
 

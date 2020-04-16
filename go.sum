@@ -1,7 +1,7 @@
 github.com/cosiner/argv v0.0.1 h1:2iAFN+sWPktbZ4tvxm33Ei8VY66FPCxdOxpncUGpAXE=
 github.com/cosiner/argv v0.0.1/go.mod h1:p/NrK5tF6ICIly4qwEDsf6VDirFiWWz0FenfYBwJaKQ=
-github.com/cosiner/argv v0.1.0 h1:BVDiEL32lwHukgJKP87btEPenzrrHUjajs/8yzaqcXg=
-github.com/cosiner/argv v0.1.0/go.mod h1:EusR6TucWKX+zFgtdUsKT2Cvg45K5rtpCcWz4hK06d8=
+github.com/cosiner/argv v0.1.1-0.20200416041250-86e3c689263e h1:1m6Zv6jGsCUFFFSHiAt9yHzKFjdEZNQepMAaxYPAxSM=
+github.com/cosiner/argv v0.1.1-0.20200416041250-86e3c689263e/go.mod h1:EusR6TucWKX+zFgtdUsKT2Cvg45K5rtpCcWz4hK06d8=
 github.com/cosiner/flag v0.4.1-0.20200416030832-7b3389bbd78e h1:97/RycyHNMFfPnj9H6DG1uQj6jQ+e9sayFVkQ9BXgfQ=
 github.com/cosiner/flag v0.4.1-0.20200416030832-7b3389bbd78e/go.mod h1:YqKaLwmgToSX9s36OsA7pknjZ3IjHbzOP7YZ26PMF4k=
 github.com/fatih/color v1.9.0 h1:8xPHl4/q1VyqGIPif1F+1V3Y3lSmrq01EabUW3CoW5s=

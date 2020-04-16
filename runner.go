@@ -222,10 +222,10 @@ func (r *runner) searchTemplate(name string) ([]syntax.Action, bool) {
 func (r *runner) createTaskEnvs(name string, task syntax.Task, workDir string) *ExpandEnvs {
 	envs := newExpandEnvs()
 	envs.parsePairs(r.log(), os.Environ(), false)
-	envs.add(r.log(), "WORKDIR", workDir, false)
-	envs.add(r.log(), "HOST_OS", runtime.GOOS, false)
-	envs.add(r.log(), "HOST_ARCH", runtime.GOARCH, false)
-	envs.add(r.log(), "TASK_NAME", name, false)
+	envs.add(r.log(), syntax.BUILTIN_ENV_WORKDIR, workDir, false)
+	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_OS, runtime.GOOS, false)
+	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_ARCH, runtime.GOARCH, false)
+	envs.add(r.log(), syntax.BUILTIN_ENV_TASK_NAME, name, false)
 	envs.parseEnvs(r.log(), r.configs.Envs)
 	for _, arg := range task.Args {
 		if arg.Env == "" {
@@ -633,16 +633,18 @@ func (r *runner) runActionLoop(action syntax.ActionLoop, envs *ExpandEnvs) {
 	})
 }
 
-func (r *runner) runCommand(vars *ExpandEnvs, cmd string, needsOutput bool, fds commandFds) string {
-	output, err := runCommand(vars, cmd, needsOutput, fds)
+func (r *runner) runCommand(vars *ExpandEnvs, cmd string, fds commandFds, background bool) (pid int) {
+	pid, _, err := runCommand(vars, cmd, false, fds, background)
 	if err != nil {
 		r.fatalln("run command failed:", err)
-		return ""
+		return pid
 	}
-	return output
+	return pid
 }
 
 func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
+	envs.add(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, "", false)
+
 	var fds commandFds
 	var err error
 	if action.Stdin != "" {
@@ -680,7 +682,10 @@ func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
 			fds.Stderr = out
 		}
 	}
-	r.runCommand(envs, action.Exec, false, fds)
+	pid := r.runCommand(envs, action.Exec, fds, action.Background)
+	if pid > 0 {
+		envs.add(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, strconv.Itoa(pid), false)
+	}
 }
 
 func (r *runner) runActionWatch(action syntax.ActionWatch, envs *ExpandEnvs) {
@@ -712,6 +717,51 @@ func (r *runner) runActionWatch(action syntax.ActionWatch, envs *ExpandEnvs) {
 	})
 }
 
+func (r *runner) findProcess(pidstr, name string, envs *ExpandEnvs) (*os.Process, bool) {
+	err := envs.expandStringPtrs(&name, &pidstr)
+	if err != nil {
+		r.fatalln(err)
+		return nil, false
+	}
+
+	var pid int
+	if pidstr != "" {
+		pid, err = strconv.Atoi(pidstr)
+		if err != nil {
+			r.warnln("convert pid to number failed:", pidstr, err)
+			return nil, false
+		}
+	}
+	if name != "" {
+		processes, err := ps.Processes()
+		if err != nil {
+			r.warnln("list processes failed:", err)
+			return nil, false
+		}
+		processName := strings.TrimSuffix(name, ".exe")
+		for _, p := range processes {
+			if pid > 0 && p.Pid() != pid {
+				continue
+			}
+			name := strings.TrimSuffix(filepath.ToSlash(p.Executable()), ".exe")
+			if name == processName || strings.HasSuffix(name, "/"+processName) {
+				pid = p.Pid()
+				break
+			}
+		}
+	}
+	if pid <= 0 {
+		r.warnln("couldn't find process")
+		return nil, false
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		r.warnln("couldn't find process:", err)
+		return nil, false
+	}
+	return process, true
+}
+
 func (r *runner) runActionPkill(action syntax.ActionPkill, envs *ExpandEnvs) {
 	err := envs.expandStringPtrs(&action.Signal)
 	if err != nil {
@@ -731,44 +781,25 @@ func (r *runner) runActionPkill(action syntax.ActionPkill, envs *ExpandEnvs) {
 		}
 		sig = syscall.Signal(n)
 	}
-	var pid int
-	if action.Process != "" {
-		err := envs.expandStringPtrs(&action.Process)
-		if err != nil {
-			r.fatalln(err)
-			return
-		}
-		processes, err := ps.Processes()
-		if err != nil {
-			r.warnln("list processes failed:", err)
-			return
-		}
-		processName := strings.TrimSuffix(action.Process, ".exe")
-		for _, p := range processes {
-			if action.Pid > 0 && p.Pid() != action.Pid {
-				continue
-			}
-			name := strings.TrimSuffix(filepath.ToSlash(p.Executable()), ".exe")
-			if name == processName || strings.HasSuffix(name, "/"+processName) {
-				pid = p.Pid()
-				break
-			}
-		}
-	} else if action.Pid > 0 {
-		pid = action.Pid
-	}
-	if pid <= 0 {
-		r.warnln("process not found")
-		return
-	}
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		r.warnln("find process failed:", err)
+	process, ok := r.findProcess(action.Pid, action.Process, envs)
+	if !ok {
 		return
 	}
 	err = process.Signal(sig)
 	if err != nil {
 		r.warnln("signal process failed:", err)
+	}
+}
+
+func (r *runner) runActionWait(action syntax.ActionWait, envs *ExpandEnvs) {
+	process, ok := r.findProcess(action.Pid, action.Process, envs)
+	if !ok {
+		return
+	}
+	_, err := process.Wait()
+	if err != nil {
+		r.warnln("couldn't wait on process:", process.Pid, err)
+		return
 	}
 }
 
@@ -779,7 +810,7 @@ func (r *runner) runActionTask(action syntax.ActionTask, envs *ExpandEnvs) {
 		return
 	}
 
-	r.infoln("WorkDir:", wd)
+	r.infoln("workdir:", wd)
 	task, ok := r.searchTask(action.Name)
 	if !ok {
 		r.fatalln("task not found:", action.Name)
@@ -1075,6 +1106,13 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 				r.infoln("Sleep:", dur.String())
 
 				time.Sleep(dur)
+			}
+		})
+		r.next(func() {
+			if a.Wait != (syntax.ActionWait{}) {
+				r.infoln("Wait.")
+
+				r.runActionWait(a.Wait, envs)
 			}
 		})
 	}

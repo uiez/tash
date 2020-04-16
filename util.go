@@ -195,7 +195,7 @@ type commandFds struct {
 	Stderr io.Writer
 }
 
-func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds) (string, error) {
+func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds, background bool) (pid int, output string, err error) {
 	osEnvs := envs.formatEnvs()
 	sections, err := argv.Argv(
 		cmd,
@@ -205,11 +205,14 @@ func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds) 
 		envs.expandString,
 	)
 	if err != nil {
-		return "", fmt.Errorf("parse command string failed: %s", err)
+		return 0, "", fmt.Errorf("parse command string failed: %s", err)
+	}
+	if len(sections) == 0 {
+		return 0, "", fmt.Errorf("empty command line string")
 	}
 	cmds, err := argv.Cmds(sections...)
 	if err != nil {
-		return "", fmt.Errorf("build command failed: %s", err)
+		return 0, "", fmt.Errorf("build command failed: %s", err)
 	}
 	for i := range cmds {
 		cmds[i].Env = osEnvs
@@ -219,18 +222,26 @@ func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds) 
 		fds.Stdout = bytes.NewBuffer(nil)
 		fds.Stderr = nil
 	}
-	err = argv.Pipe(fds.Stdin, fds.Stdout, fds.Stderr, cmds...)
+	if background {
+		err = argv.Start(fds.Stdin, fds.Stdout, fds.Stderr, cmds...)
+	} else {
+		err = argv.Pipe(fds.Stdin, fds.Stdout, fds.Stderr, cmds...)
+	}
 	if err != nil {
-		return "", fmt.Errorf("run command failed: %s", err)
+		return 0, "", fmt.Errorf("run command failed: %s", err)
+	}
+	if p := cmds[len(cmds)-1].Process; p != nil {
+		pid = p.Pid
 	}
 	if needsOutput {
-		return fds.Stdout.(*bytes.Buffer).String(), nil
+		return pid, fds.Stdout.(*bytes.Buffer).String(), nil
 	}
-	return "", nil
+	return pid, "", nil
 }
 
 func getCmdOutput(envs *ExpandEnvs, cmd string) (string, error) {
-	return runCommand(envs, cmd, true, commandFds{})
+	_, output, err := runCommand(envs, cmd, true, commandFds{}, false)
+	return output, err
 }
 
 func checkCondition(envs *ExpandEnvs, value, operator string, compareField *string) (bool, error) {

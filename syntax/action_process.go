@@ -8,6 +8,8 @@ type processActions struct {
 	Sleep ActionSleep
 	// execute command
 	Cmd ActionCmd
+	// wait process exit
+	Wait ActionWait
 }
 
 // command execution
@@ -28,14 +30,23 @@ type ActionCmd struct {
 	// os.Stderr if empty
 	Stderr       string
 	StderrAppend bool
+
+	// run in background
+	Background bool
 }
 
 // pkill process
 type ActionPkill struct {
 	Process string
-	Pid     int
+	Pid     string
 	Signal  string
 }
 
 // sleep ms
 type ActionSleep uint
+
+// wait process execution finish
+type ActionWait struct {
+	Process string
+	Pid     string
+}

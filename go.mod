@@ -3,7 +3,7 @@ module github.com/zhuah/tash
 go 1.14
 
 require (
-	github.com/cosiner/argv v0.1.0
+	github.com/cosiner/argv v0.1.1-0.20200416041250-86e3c689263e
 	github.com/cosiner/flag v0.4.1-0.20200416030832-7b3389bbd78e
 	github.com/fatih/color v1.9.0
 	github.com/fsnotify/fsnotify v1.4.9
