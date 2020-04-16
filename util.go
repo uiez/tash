@@ -233,21 +233,14 @@ func getCmdOutput(envs *ExpandEnvs, cmd string) (string, error) {
 	return runCommand(envs, cmd, true, commandFds{})
 }
 
-type conditionContext struct {
-	log           logger
-	envs          *ExpandEnvs
-	valueOrigin   string
-	compareOrigin string
-}
-
-func checkCondition(ctx *conditionContext, value, operator, compare string) bool {
+func checkCondition(envs *ExpandEnvs, value, operator string, compareField *string) (bool, error) {
 	fixAlias := func(o *string) {
 		if a, has := syntax.OperatorAlias[*o]; has {
 			*o = a
 		}
 	}
 	if operator == "" {
-		if ctx.compareOrigin == "" {
+		if compareField != nil {
 			operator = syntax.Op_bool_true
 		} else {
 			operator = syntax.Op_string_equal
@@ -265,12 +258,17 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 		}
 	}
 	fixAlias(&operator)
+
+	var compare string
+	if compareField != nil {
+		compare = *compareField
+	}
 	var ok bool
 	switch operator {
 	case syntax.Op_string_regexp:
 		r, err := regexp.CompilePOSIX(compare)
 		if err != nil {
-			ctx.log.fatalln("compile regexp failed:", compare, err)
+			return false, fmt.Errorf("compile regexp failed: %s, %s", compareField, err)
 		}
 		ok = r.MatchString(value)
 
@@ -311,7 +309,7 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 			v2, err2 = parseInt(v)
 		}
 		if err1 != nil || err2 != nil {
-			ctx.log.fatalln("convert values to float number failed:", value, compare)
+			return false, fmt.Errorf("convert values to float number failed: %s, %s", value, compareField)
 		}
 		switch operator {
 		case syntax.Op_number_greaterThan:
@@ -331,7 +329,7 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 		s1, e1 := os.Stat(value)
 		s2, e2 := os.Stat(compare)
 		if e1 != nil || e2 != nil {
-			ctx.log.fatalln("access files failed:", e1, e2)
+			return false, fmt.Errorf("access files failed: %s %s", e1, e2)
 		}
 		switch operator {
 		case syntax.Op_file_newerThan:
@@ -341,8 +339,8 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 		}
 	//case "-ef":
 	default:
-		if compare != "" {
-			ctx.log.fatalln("operator doesn't needs compare field:", operator)
+		if compareField != nil {
+			return false, fmt.Errorf("operator doesn't needs compare field: %s", operator)
 		}
 
 		checkFileStat := func(fn func(stat os.FileInfo) bool) bool {
@@ -375,13 +373,13 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 			case "", "false", "no", "0":
 				ok = false
 			default:
-				ctx.log.fatalln("invalid boolean value:", ctx.valueOrigin, value)
+				return false, fmt.Errorf("invalid boolean value: %s", value)
 			}
 			if operator == syntax.Op_bool_not {
 				ok = !ok
 			}
 		case syntax.Op_env_defined:
-			ok = ctx.envs.Exist(value)
+			ok = envs.Exist(value)
 		case syntax.Op_file_exist:
 			ok = checkFileStat(nil)
 		case syntax.Op_file_blockDevice:
@@ -437,14 +435,14 @@ func checkCondition(ctx *conditionContext, value, operator, compare string) bool
 		//case "-w":
 		//case "-x":
 		default:
-			ctx.log.fatalln("invalid condition operator:", operator)
+			return false, fmt.Errorf("invalid condition operator: %s", operator)
 		}
 	}
 
 	if not {
-		return !ok
+		return !ok, nil
 	}
-	return ok
+	return ok, nil
 }
 
 func fileReplacer(args []string, isRegexp bool) (func(path string) error, error) {

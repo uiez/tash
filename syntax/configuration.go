@@ -53,3 +53,5 @@ type Action struct {
 	processActions
 	refActions
 }
+
+const DefaultArraySeparator = " "

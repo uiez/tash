@@ -17,14 +17,29 @@ const (
 	Ef_string_upper = "string.upper"
 	// args is same as stringLower, but returns string inside the range
 	Ef_string_slice = "string.slice"
-	// split string and return element at index, index can be negative. args: 1: index, sep is ' ', 2: sep index
-	Ef_string_at = "string.at"
 	// args: [old new]..., do literal replacing
 	Ef_string_replace = "string.replace"
 	// args: [old new]..., do regexp replacing
 	Ef_string_regexpReplace = "string.regexpReplace"
+
 	// sort strings, args: 0: split/join separator is ' ', 1: split/join separator is args[0]
-	Ef_string_sort = "string.sort"
+	Ef_array_sort = "array.sort"
+	// sort strings as number, args: same as array.sort
+	Ef_array_numSort = "array.numsort"
+	// reverse array elements, args: same as array.sort
+	Ef_array_reverse = "array.reverse"
+	// filter array elements, args: 1: operator, 2: operator compare, 3: operator compare array-separator
+	Ef_array_filter = "array.filter"
+	// split string and return element at index, index can be negative. args: 1: index, sep is ' ', 2: sep index
+	Ef_array_at = "array.at"
+	// split string, calculate array slice and join
+	// args: 1: index
+	//       2: index count
+	//       3:  separator index count
+	Ef_array_slice = "array.slice"
+	// reset array separator, args: 1: new separator, 2: old new
+	Ef_array_separator = "array.separator"
+
 	// return files match given pattern, args: 0: join separator is ' ', 1: join separator is args[0]
 	Ef_file_glob = "file.glob"
 	// args: no args
@@ -42,6 +57,7 @@ const (
 	Ef_file_fromSlash = "file.fromSlash"
 	// args: no args
 	Ef_file_content = "file.content"
+
 	// args: 0: output as timestamp, 1: output as format, input will be ignored
 	Ef_date_now = "date.now"
 	// args: format, input should be timestamp

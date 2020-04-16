@@ -49,7 +49,7 @@ type ConditionIf struct {
 	// operator
 	Operator string
 	// right-hand operand, some boolean operators doesn't needs this field
-	Compare string
+	Compare *string
 }
 
 // sugar for condition checking

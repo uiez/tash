@@ -15,7 +15,7 @@ import (
 	"github.com/zhuah/tash/syntax"
 )
 
-func stringRange(l int, args []string) (start, end int, err error) {
+func parseRange(l int, args []string) (start, end int, err error) {
 	var count int
 	switch len(args) {
 	case 0:
@@ -117,7 +117,7 @@ func init() {
 	}
 	expandFilters[syntax.Ef_string_lower] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		rs := []rune(val)
-		start, end, err := stringRange(len(rs), args)
+		start, end, err := parseRange(len(rs), args)
 		if err != nil {
 			return "", err
 		}
@@ -128,7 +128,7 @@ func init() {
 	}
 	expandFilters[syntax.Ef_string_upper] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		rs := []rune(val)
-		start, end, err := stringRange(len(rs), args)
+		start, end, err := parseRange(len(rs), args)
 		if err != nil {
 			return "", err
 		}
@@ -139,32 +139,11 @@ func init() {
 	}
 	expandFilters[syntax.Ef_string_slice] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		rs := []rune(val)
-		start, end, err := stringRange(len(rs), args)
+		start, end, err := parseRange(len(rs), args)
 		if err != nil {
 			return "", err
 		}
 		return string(rs[start : start+end]), nil
-	}
-	expandFilters[syntax.Ef_string_at] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		var sep string
-		var index string
-		switch len(args) {
-		case 1:
-			sep = " "
-			index = args[0]
-		case 2:
-			sep = args[0]
-			index = args[1]
-		default:
-			return "", fmt.Errorf("args invalid")
-		}
-
-		secs := stringSplitAndTrimFilterSpace(val, sep)
-		start, _, err := stringRange(len(secs), []string{index})
-		if err != nil {
-			return "", err
-		}
-		return secs[start], nil
 	}
 	expandFilters[syntax.Ef_string_replace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		return stringReplace(val, args, false)
@@ -172,7 +151,8 @@ func init() {
 	expandFilters[syntax.Ef_string_regexpReplace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		return stringReplace(val, args, true)
 	}
-	expandFilters[syntax.Ef_string_sort] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+
+	withArray := func(val string, args []string, fn func(arr []string) ([]string, error)) (string, error) {
 		var sep string
 		switch len(args) {
 		case 0:
@@ -182,12 +162,145 @@ func init() {
 			return "", fmt.Errorf("args invalid")
 		}
 		if sep == "" {
-			sep = " "
+			sep = syntax.DefaultArraySeparator
 		}
-		secs := stringSplitAndTrimFilterSpace(val, sep)
-		sort.Strings(secs)
-		return strings.Join(secs, sep), nil
+		arr := stringSplitAndTrimFilterSpace(val, sep)
+		arr, err := fn(arr)
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(arr, sep), nil
 	}
+	expandFilters[syntax.Ef_array_sort] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		return withArray(val, args, func(arr []string) ([]string, error) {
+			sort.Strings(arr)
+			return arr, nil
+		})
+	}
+	expandFilters[syntax.Ef_array_numSort] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		return withArray(val, args, func(arr []string) ([]string, error) {
+			nums := make([]int64, len(arr))
+			for i := range arr {
+				if arr[i] != "" {
+					n, err := strconv.ParseInt(arr[i], 10, 64)
+					if err != nil {
+						return nil, fmt.Errorf("couldn't convert to number: '%s'", arr[i])
+					}
+					nums[i] = n
+				}
+			}
+			sort.Slice(nums, func(i, j int) bool {
+				return nums[i] < nums[j]
+			})
+			for i := range arr {
+				arr[i] = strconv.FormatInt(nums[i], 10)
+			}
+			return arr, nil
+		})
+	}
+	expandFilters[syntax.Ef_array_reverse] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		return withArray(val, args, func(arr []string) ([]string, error) {
+			l := len(arr)
+			for i := 0; i < l/2; i++ {
+				arr[i], arr[l-1-i] = arr[l-1-i], arr[i]
+			}
+			return arr, nil
+		})
+	}
+	expandFilters[syntax.Ef_array_at] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var sep string
+		var index string
+		switch len(args) {
+		case 1:
+			sep = syntax.DefaultArraySeparator
+			index = args[0]
+		case 2:
+			sep = args[0]
+			index = args[1]
+		default:
+			return "", fmt.Errorf("args invalid")
+		}
+
+		arr := stringSplitAndTrimFilterSpace(val, sep)
+		start, _, err := parseRange(len(arr), []string{index})
+		if err != nil {
+			return "", err
+		}
+		return arr[start], nil
+	}
+	expandFilters[syntax.Ef_array_slice] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var sep string
+		var rangeArgs []string
+		switch len(args) {
+		case 1, 2:
+			sep = syntax.DefaultArraySeparator
+			rangeArgs = args
+		case 3:
+			sep = args[0]
+			rangeArgs = args[1:]
+		default:
+			return "", fmt.Errorf("args invalid")
+		}
+		arr := stringSplitAndTrimFilterSpace(val, sep)
+		start, end, err := parseRange(len(arr), rangeArgs)
+		if err != nil {
+			return "", err
+		}
+		arr = arr[start:end]
+		return strings.Join(arr, sep), nil
+	}
+	expandFilters[syntax.Ef_array_separator] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var oldSep string
+		var newSep string
+		switch len(args) {
+		case 1:
+			oldSep = syntax.DefaultArraySeparator
+			newSep = args[0]
+		case 2:
+			oldSep = args[0]
+			newSep = args[1]
+		default:
+			return "", fmt.Errorf("args invalid")
+		}
+
+		arr := stringSplitAndTrimFilterSpace(val, oldSep)
+		return strings.Join(arr, newSep), nil
+	}
+	expandFilters[syntax.Ef_array_filter] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var compare *string
+		var sep string
+		switch len(args) {
+		case 1:
+		case 2:
+			compare = &args[1]
+		case 3:
+			compare = &args[1]
+			sep = args[2]
+		default:
+			return "", fmt.Errorf("args invalid")
+		}
+		operator := args[0]
+		if sep == "" {
+			sep = syntax.DefaultArraySeparator
+		}
+		arr := stringSplitAndTrimFilterSpace(val, sep)
+		var end int
+		for i, s := range arr {
+			ok, err := checkCondition(envs, s, operator, compare)
+			if err != nil {
+				return "", err
+			}
+			if ok {
+				if end != i {
+					arr[end] = arr[i]
+				}
+				end++
+			}
+		}
+		arr = arr[:end]
+		return strings.Join(arr, sep), nil
+	}
+
 	expandFilters[syntax.Ef_file_glob] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		var sep string
 		switch len(args) {
@@ -198,7 +311,7 @@ func init() {
 			return "", fmt.Errorf("args invalid")
 		}
 		if sep == "" {
-			sep = " "
+			sep = syntax.DefaultArraySeparator
 		}
 		matched, err := zglob.Glob(val)
 		if err != nil {

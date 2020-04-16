@@ -112,6 +112,9 @@ func (e *ExpandEnvs) expandStringSlice(s []string) error {
 
 func (e *ExpandEnvs) expandStringPtrs(s ...*string) error {
 	for _, s := range s {
+		if s == nil {
+			continue
+		}
 		v, err := e.expandString(*s)
 		if err != nil {
 			return fmt.Errorf("expand string failed: %s, %w", *s, err)

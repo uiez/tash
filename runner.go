@@ -410,17 +410,17 @@ func (r *runner) validateCondition(c *syntax.Condition) bool {
 func (r *runner) evalCondition(c *syntax.Condition, envs *ExpandEnvs) bool {
 	if c.ConditionIf != nil {
 		value := c.ConditionIf.Value
-		err := envs.expandStringPtrs(&value, &c.ConditionIf.Compare)
+		err := envs.expandStringPtrs(&value, c.ConditionIf.Compare)
 		if err != nil {
 			r.fatalln(err)
 			return false
 		}
-		return checkCondition(&conditionContext{
-			log:           r.log(),
-			envs:          envs,
-			valueOrigin:   c.ConditionIf.Value,
-			compareOrigin: c.ConditionIf.Compare,
-		}, value, c.ConditionIf.Operator, c.ConditionIf.Compare)
+		ok, err := checkCondition(envs, value, c.ConditionIf.Operator, c.ConditionIf.Compare)
+		if err != nil {
+			r.fatalln("check condition failed:", err)
+			return false
+		}
+		return ok
 	}
 	if c.Not != nil {
 		return !r.evalCondition(c.Not, envs)
@@ -532,12 +532,12 @@ func (r *runner) runActionSwitch(action syntax.ActionSwitch, envs *ExpandEnvs) {
 				r.fatalln(err)
 				return
 			}
-			if checkCondition(&conditionContext{
-				log:           r.log(),
-				envs:          envs,
-				valueOrigin:   action.Value,
-				compareOrigin: *c.Compare,
-			}, value, action.Operator, compare) {
+			ok, err := checkCondition(envs, value, action.Operator, c.Compare)
+			if err != nil {
+				r.fatalln("check condition failed:", err)
+				return
+			}
+			if ok {
 				r.debugln("action switch case run:", *c.Compare)
 				r.addIndentIfDebug().runActions(envs, c.Actions)
 				return
