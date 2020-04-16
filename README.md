@@ -111,7 +111,7 @@ defined in [syntax](/syntax) folder.
     - [process](/syntax/action_process.go)
     - [flow control](/syntax/action_flow.go)
         - [comparision operators](/syntax/operator.go)
-    - [action reusing](/syntax/action_reuse.go)
+    - [action reference/reusing](/syntax/action_ref.go)
     
 * [environment variable expanding](/syntax/expanding.go)
     * [expanding filters](/syntax/expand_filter.go)
