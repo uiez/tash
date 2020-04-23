@@ -45,11 +45,10 @@ func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []syntax.Env) {
 		}
 	}
 }
+
 func (e *ExpandEnvs) parseBlock(log logger, block string, expand bool) {
-	lines := strings.Split(block, "\n")
-	for _, l := range lines {
-		e.parsePairs(log, strings.Split(l, ";"), expand)
-	}
+	blocks := splitBlocks(block)
+	e.parsePairs(log, blocks, expand)
 }
 
 func (e *ExpandEnvs) parsePairs(log logger, items []string, expand bool) {

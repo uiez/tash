@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/mattn/go-zglob"
 	"github.com/mitchellh/go-ps"
 	"github.com/zhuah/tash/syntax"
 )
@@ -368,6 +367,7 @@ func (r *runner) runActionTemplate(action string, envs *ExpandEnvs) {
 	}
 	r.addIndent().runActions(envs, actions)
 }
+
 func (r *runner) validateCondition(c *syntax.Condition) bool {
 	n := 0
 	if c.ConditionIf != nil {
@@ -689,18 +689,15 @@ func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
 }
 
 func (r *runner) runActionWatch(action syntax.ActionWatch, envs *ExpandEnvs) {
-	err := envs.expandStringSlice(action.Dirs)
-	if err != nil {
-		r.fatalln(err)
-		return
-	}
-	err = envs.expandStringSlice(action.Files)
+	err := envs.expandStringPtrs(&action.Dirs, &action.Files)
 	if err != nil {
 		r.fatalln(err)
 		return
 	}
 
-	w, err := newWatcher(r.log(), action.Dirs, action.Files)
+	dirs := splitBlocks(action.Dirs)
+	files := splitBlocks(action.Files)
+	w, err := newWatcher(r.log(), dirs, files)
 	if err != nil {
 		r.fatalln("create watcher failed:", err)
 		return
@@ -803,7 +800,7 @@ func (r *runner) runActionWait(action syntax.ActionWait, envs *ExpandEnvs) {
 	}
 }
 
-func (r *runner) runActionTask(action syntax.ActionTask, envs *ExpandEnvs) {
+func (r *runner) runActionTask(name string, passEnvs, returnEnvs []string, envs *ExpandEnvs) {
 	wd, err := os.Getwd()
 	if err != nil {
 		r.fatalln("get current directory failed:", err)
@@ -811,25 +808,25 @@ func (r *runner) runActionTask(action syntax.ActionTask, envs *ExpandEnvs) {
 	}
 
 	r.infoln("workdir:", wd)
-	task, ok := r.searchTask(action.Name)
+	task, ok := r.searchTask(name)
 	if !ok {
-		r.fatalln("task not found:", action.Name)
+		r.fatalln("task not found:", name)
 		return
 	}
 	nr := newRunner(nil, r.log().addIndent(), r.configs)
 	nr.noExitOnFail = true
 
-	taskEnvs := r.createTaskEnvs(action.Name, task, wd)
+	taskEnvs := r.createTaskEnvs(name, task, wd)
 	transferEnvs := func(from, to *ExpandEnvs, envs []string) {
 		for _, env := range envs {
 			v, _ := from.lookupAndFilter(env, nil)
 			to.add(nr.log(), env, v, false)
 		}
 	}
-	transferEnvs(envs, taskEnvs, action.PassEnvs)
+	transferEnvs(envs, taskEnvs, passEnvs)
 	nr.runActions(taskEnvs, task.Actions)
 	if !nr.failed {
-		transferEnvs(taskEnvs, envs, action.ReturnEnvs)
+		transferEnvs(taskEnvs, envs, returnEnvs)
 	}
 	err = os.Chdir(wd)
 	if err != nil {
@@ -841,40 +838,17 @@ func (r *runner) runActionTask(action syntax.ActionTask, envs *ExpandEnvs) {
 	}
 }
 
-func (r *runner) expandPathAndGlob(path string, envs *ExpandEnvs, mustBeFile bool) ([]string, bool) {
+func (r *runner) expandPathBlockAndGlob(path string, envs *ExpandEnvs, mustBeFile bool) ([]string, bool) {
 	err := envs.expandStringPtrs(&path)
 	if err != nil {
 		r.fatalln(err)
 		return nil, false
 	}
-	matched, err := zglob.Glob(path)
+	matched, err := splitBlocksAndGlobPath(path, mustBeFile)
 	if err != nil {
-		r.fatalln("glob path failed:", path, err)
+		r.fatalln("glob path failed:", err)
 		return nil, false
 	}
-	sort.Strings(matched)
-
-	if !mustBeFile {
-		return matched, true
-	}
-	var end int
-	for i, p := range matched {
-		if mustBeFile {
-			stat, err := os.Stat(p)
-			if err != nil {
-				r.warnln("retrieve file stat failed:", p, err)
-				continue
-			}
-			if stat.IsDir() {
-				continue
-			}
-		}
-		if end != i {
-			matched[end] = matched[i]
-		}
-		end++
-	}
-	matched = matched[:end]
 	return matched, true
 }
 
@@ -912,7 +886,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 		})
 		r.next(func() {
 			if a.Del != "" {
-				matched, ok := r.expandPathAndGlob(a.Del, envs, false)
+				matched, ok := r.expandPathBlockAndGlob(a.Del, envs, false)
 				if !ok {
 					return
 				}
@@ -930,7 +904,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 				if len(a.Replace.Replaces) <= 0 || len(a.Replace.Replaces)%2 != 0 {
 					r.fatalln("invalid replaces pairs")
 				}
-				matched, ok := r.expandPathAndGlob(a.Replace.File, envs, true)
+				matched, ok := r.expandPathBlockAndGlob(a.Replace.File, envs, true)
 				if !ok {
 					return
 				}
@@ -950,7 +924,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 		})
 		r.next(func() {
 			if a.Chmod.Path != "" {
-				matched, ok := r.expandPathAndGlob(a.Chmod.Path, envs, false)
+				matched, ok := r.expandPathBlockAndGlob(a.Chmod.Path, envs, false)
 				if !ok {
 					return
 				}
@@ -965,26 +939,18 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 		})
 		r.next(func() {
 			if len(a.Chdir.Actions) > 0 {
-				wd, err := os.Getwd()
-				if err != nil {
-					r.fatalln("get current directory failed:", err)
-					return
-				}
-				err = envs.expandStringPtrs(&a.Chdir.Dir)
+				err := envs.expandStringPtrs(&a.Chdir.Dir)
 				if err != nil {
 					r.fatalln(err)
 					return
 				}
 				r.infoln("Chdir:", a.Chdir.Dir)
-				err = os.Chdir(a.Chdir.Dir)
+				err = runInDir(a.Chdir.Dir, func() error {
+					r.addIndent().runActions(envs, a.Chdir.Actions)
+					return nil
+				})
 				if err != nil {
 					r.fatalln("chdir failed:", err)
-					return
-				}
-				r.addIndent().runActions(envs, a.Chdir.Actions)
-				err = os.Chdir(wd)
-				if err != nil {
-					r.fatalln("chdir back failed:", err)
 					return
 				}
 			}
@@ -996,18 +962,25 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 					r.fatalln(err)
 					return
 				}
-				r.infoln("Mkdir:", a.Mkdir)
-				err = os.MkdirAll(a.Mkdir, 0755)
-				if err != nil {
-					r.fatalln("mkdir failed:", err)
-					return
+				blocks := splitBlocks(a.Mkdir)
+
+				r.infoln("Mkdir:", blocks)
+				for _, dir := range blocks {
+					err = os.MkdirAll(dir, 0755)
+					if err != nil {
+						r.fatalln("mkdir failed:", err)
+						return
+					}
 				}
 			}
 		})
 		r.next(func() {
 			if a.Template != "" {
-				r.infoln("Template:", a.Template)
-				r.runActionTemplate(a.Template, envs)
+				templates := splitBlocks(a.Template)
+				r.infoln("Template:", templates)
+				for _, template := range templates {
+					r.runActionTemplate(template, envs)
+				}
 			}
 		})
 		r.next(func() {
@@ -1083,8 +1056,11 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 					r.fatalln(err)
 					return
 				}
-				r.infoln("Task:", a.Task.Name)
-				r.runActionTask(a.Task, envs)
+				blocks := splitBlocks(a.Task.Name)
+				r.infoln("Task:", blocks)
+				for _, name := range blocks {
+					r.runActionTask(name, a.Task.PassEnvs, a.Task.ReturnEnvs, envs)
+				}
 			}
 		})
 		r.next(func() {

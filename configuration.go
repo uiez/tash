@@ -114,14 +114,21 @@ func (c *Configuration) buildFrom(log logger, path string) {
 		return
 	}
 
-	if len(configs.Imports) > 0 {
+	if configs.Imports != "" {
 		dir := filepath.Dir(path)
-		for _, imp := range configs.Imports {
-			if !filepath.IsAbs(imp) {
-				imp = filepath.Join(dir, imp)
+		err = runInDir(dir, func() error {
+			matched, err := splitBlocksAndGlobPath(configs.Imports, true)
+			if err != nil {
+				return fmt.Errorf("glob path failed: %w", err)
 			}
-
-			c.importFile(log, imp)
+			for _, m := range matched {
+				c.importFile(log, m)
+			}
+			return nil
+		})
+		if err != nil {
+			log.fatalln("import files failed:", err)
+			return
 		}
 	}
 	c.Envs = append(c.Envs, configs.Envs...)

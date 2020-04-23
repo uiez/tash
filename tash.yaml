@@ -57,19 +57,15 @@ tasks:
       build darwin,linux,windows binary
     actions:
       - task:
-          name: darwin
-      - task:
-          name: linux
-      - task:
-          name: windows
+          name: darwin; linux; windows
 
   watch:
     description: |-
       watch fs changes and build native binary
     actions:
       - watch:
-          dirs: [.]
-          files: [./*.go]
+          dirs: .
+          files: "*.go"
           actions:
             - task:
                 name: native

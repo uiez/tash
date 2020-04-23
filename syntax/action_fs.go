@@ -74,9 +74,9 @@ type ActionEcho struct {
 // watch fs changes
 type ActionWatch struct {
 	// watch patterns, support glob
-	Dirs []string
+	Dirs string
 	// file patterns in matched directories, support glob
-	Files []string
+	Files string
 
 	Actions []Action
 }

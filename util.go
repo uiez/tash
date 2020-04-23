@@ -14,10 +14,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/cosiner/argv"
+	"github.com/mattn/go-zglob"
 	"github.com/zhuah/tash/syntax"
 )
 
@@ -580,4 +582,71 @@ func stringUnquote(s string) string {
 		}
 	}
 	return s
+}
+
+func splitBlocks(s string) []string {
+	var blocks []string
+	arr := stringSplitAndTrimFilterSpace(s, "\n")
+	for _, a := range arr {
+		blocks = append(blocks, stringSplitAndTrimFilterSpace(a, ";")...)
+	}
+	return blocks
+}
+
+func splitBlocksAndGlobPath(path string, mustBeFile bool) ([]string, error) {
+	var matched []string
+	blocks := splitBlocks(path)
+	for _, block := range blocks {
+		m, err := zglob.Glob(block)
+		if err != nil {
+			return nil, fmt.Errorf("glob path failed:", block, err)
+		}
+		matched = append(matched, m...)
+	}
+	sort.Strings(matched)
+
+	if !mustBeFile {
+		return matched, nil
+	}
+	var end int
+	for i, p := range matched {
+		if mustBeFile {
+			stat, err := os.Stat(p)
+			if err != nil {
+				continue
+			}
+			if stat.IsDir() {
+				continue
+			}
+		}
+		if end != i {
+			matched[end] = matched[i]
+		}
+		end++
+	}
+	matched = matched[:end]
+	return matched, nil
+}
+
+func runInDir(dir string, fn func() error) error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get current directory failed: %w", err)
+	}
+	err = os.Chdir(dir)
+	if err != nil {
+		return fmt.Errorf("chdir failed: %w", err)
+	}
+	err = fn()
+	err2 := os.Chdir(wd)
+	if err != nil {
+		if err2 != nil {
+			return fmt.Errorf("run failed: %w, chdir back failed: %s", err, err2)
+		}
+		return fmt.Errorf("run function failed: %w", err)
+	}
+	if err2 != nil {
+		return fmt.Errorf("chdir back failed: %w", err2)
+	}
+	return nil
 }
