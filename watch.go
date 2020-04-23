@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -34,7 +35,7 @@ func newWatcher(log indentLogger, dirs, files []string) (*watcher, error) {
 	watchDirs := make(map[string]bool)
 	for _, d := range dirs {
 		matched, err := zglob.Glob(d)
-		if err != nil {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("glob matching dir failed: %s, %w", d, err)
 		}
 		for _, m := range matched {

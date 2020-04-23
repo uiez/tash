@@ -609,8 +609,8 @@ func splitBlocksAndGlobPath(path string, mustBeFile bool) ([]string, error) {
 	blocks := splitBlocks(path)
 	for _, block := range blocks {
 		m, err := zglob.Glob(block)
-		if err != nil {
-			return nil, fmt.Errorf("glob path failed:", block, err)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("glob path failed: %s, %w", block, err)
 		}
 		matched = append(matched, m...)
 	}

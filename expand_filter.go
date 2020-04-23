@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -430,7 +432,7 @@ func init() {
 			sep = syntax.DefaultArraySeparator
 		}
 		matched, err := zglob.Glob(val)
-		if err != nil {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("invalid file pattern: %s, %w", val, err)
 		}
 		matched = sliceToSlash(matched)
