@@ -3,6 +3,7 @@ package syntax
 type Configuration struct {
 	// import other config files, can be both absolute or relative path.
 	// relative path is based on current file directory.
+	// supports import tash config file(.yaml,.yml) and environment config file(.env)
 	Imports []string
 
 	// defines global environment variables.
@@ -23,11 +24,8 @@ type Env struct {
 	// env name
 	Name string
 	// env value if name is empty,
-	// otherwise it should be semicolon-separated key=value or key="value" pairs
+	// otherwise it could be multiline text, and each line could be semicolon-separated key=value or key="value" pairs
 	Value string
-	// execute command and capture it's output, supports unix pipe |.
-	// output format could be json(map(string,string)) or key=value lines.
-	Cmd string
 }
 
 // defines task arguments

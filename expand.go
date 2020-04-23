@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/cosiner/argv"
@@ -36,36 +34,21 @@ func (e *ExpandEnvs) add(log logger, k, v string, expand bool) {
 
 func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []syntax.Env) {
 	for _, env := range envs {
-		if env.Cmd != "" {
-			output, err := getCmdOutput(e, env.Cmd)
-			if err != nil {
-				log.fatalln("get command output failed:", env.Cmd, err)
-				return
-			}
-			if env.Name != "" {
-				e.add(log, env.Name, strings.TrimSpace(output), false)
-				continue
-			}
-
-			kvs := make(map[string]string)
-			err = json.NewDecoder(strings.NewReader(output)).Decode(&kvs)
-			if err == nil {
-				for k, v := range kvs {
-					e.add(log, k, v, false)
-				}
-				continue
-			}
-			lines := strings.Split(output, "\n")
-			e.parsePairs(log, lines, false)
-		} else if env.Value != "" {
+		if env.Value != "" {
 			if env.Name == "" {
-				e.parsePairs(log, strings.Split(env.Value, ";"), true)
+				e.parseBlock(log, env.Value, true)
 			} else {
 				e.add(log, env.Name, env.Value, true)
 			}
 		} else if env.Name != "" {
 			e.envs[env.Name] = ""
 		}
+	}
+}
+func (e *ExpandEnvs) parseBlock(log logger, block string, expand bool) {
+	lines := strings.Split(block, "\n")
+	for _, l := range lines {
+		e.parsePairs(log, strings.Split(l, ";"), expand)
 	}
 }
 
@@ -78,9 +61,7 @@ func (e *ExpandEnvs) parsePairs(log logger, items []string, expand bool) {
 		if k == "" || v == "" {
 			continue
 		}
-		if uv, err := strconv.Unquote(v); err == nil {
-			v = uv
-		}
+		v = stringUnquote(v)
 
 		e.add(log, k, v, expand)
 	}
@@ -125,8 +106,8 @@ func (e *ExpandEnvs) expandStringPtrs(s ...*string) error {
 }
 
 func (e *ExpandEnvs) trimSpaceIfUnquoted(s string) string {
-	us, err := strconv.Unquote(s)
-	if err == nil && us != s {
+	us := stringUnquote(s)
+	if us != s {
 		return us
 	}
 	return strings.TrimSpace(s)
@@ -134,8 +115,7 @@ func (e *ExpandEnvs) trimSpaceIfUnquoted(s string) string {
 
 func (e *ExpandEnvs) lookupAndFilter(name string, filters []string) (string, error) {
 	var val string
-	us, err := strconv.Unquote(name)
-	if err == nil && us != name {
+	if us := stringUnquote(name); us != name {
 		val = us
 	} else {
 		val = e.envs[name]
@@ -231,6 +211,12 @@ func (e *ExpandEnvs) expandString(s string) (string, error) {
 			}
 		case stateBlockName:
 			switch rs[i] {
+			case '\\':
+				nameBuf = append(nameBuf, rs[i])
+				if i < l-1 {
+					i++
+					nameBuf = append(nameBuf, rs[i])
+				}
 			case '}':
 				buf = append(buf, resolveVar()...)
 				if err != nil {

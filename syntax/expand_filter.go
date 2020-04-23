@@ -30,8 +30,23 @@ const (
 	Ef_array_reverse = "array.reverse"
 	// filter array elements, args: 1: operator, 2: operator compare, 3: operator compare array-separator
 	Ef_array_filter = "array.filter"
-	// split string and return element at index, index can be negative. args: 1: index, sep is ' ', 2: sep index
+
+	// split string and return element at index, index can be negative.
+	// args: 1: index, sep is ' ', 2: sep index
+	Ef_array_get = "array.get"
+	// split string and return element at index, index can be negative and element must exist
+	Ef_array_mustGet = "array.mustGet"
+	// split string and return element at index, index can not be negative
 	Ef_array_at = "array.at"
+	// split string and return element at index, index can not be negative
+	Ef_array_mustAt = "array.mustAt"
+
+	// split string and return index of element, index can not be negative.
+	// args: 1: element, sep is ' ', 2: sep element
+	Ef_array_index = "array.index"
+	// split string and return index of element, element must exist
+	Ef_array_mustIndex = "array.mustIndex"
+
 	// split string, calculate array slice and join
 	// args: 1: index
 	//       2: index count
@@ -39,6 +54,13 @@ const (
 	Ef_array_slice = "array.slice"
 	// reset array separator, args: 1: new separator, 2: old new
 	Ef_array_separator = "array.separator"
+
+	// split string and return element by key, args: 1: key, 2: key, array separator
+	Ef_map_get = "map.get"
+	// split string and return keys, args: 0: no args, 1: array separator
+	Ef_map_keys = "map.keys"
+	// split string and return values, args: 0: no args, 1: array separator
+	Ef_map_values = "map.values"
 
 	// return files match given pattern, args: 0: join separator is ' ', 1: join separator is args[0]
 	Ef_file_glob = "file.glob"
@@ -62,6 +84,6 @@ const (
 	Ef_date_now = "date.now"
 	// args: format, input should be timestamp
 	Ef_date_format = "date.format"
-	// args: no args
+	// args: 0: no args, 1: working directory
 	Ef_cmd_output = "cmd.output"
 )

@@ -195,18 +195,7 @@ type commandFds struct {
 	Stderr io.Writer
 }
 
-func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds, background bool) (pid int, output string, err error) {
-	osEnvs := envs.formatEnvs()
-	sections, err := argv.Argv(
-		cmd,
-		func(cmd string) (string, error) {
-			return getCmdOutput(envs, cmd)
-		},
-		envs.expandString,
-	)
-	if err != nil {
-		return 0, "", fmt.Errorf("parse command string failed: %s", err)
-	}
+func execCommand(envs *ExpandEnvs, sections [][]string, cmdDir string, needsOutput bool, fds commandFds, background bool) (pid int, output string, err error) {
 	if len(sections) == 0 {
 		return 0, "", fmt.Errorf("empty command line string")
 	}
@@ -214,8 +203,12 @@ func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds, 
 	if err != nil {
 		return 0, "", fmt.Errorf("build command failed: %s", err)
 	}
+	osEnvs := envs.formatEnvs()
 	for i := range cmds {
 		cmds[i].Env = osEnvs
+		if cmdDir != "" {
+			cmds[i].Dir = cmdDir
+		}
 	}
 	if needsOutput {
 		fds.Stdin = nil
@@ -234,13 +227,30 @@ func runCommand(envs *ExpandEnvs, cmd string, needsOutput bool, fds commandFds, 
 		pid = p.Pid
 	}
 	if needsOutput {
-		return pid, fds.Stdout.(*bytes.Buffer).String(), nil
+		return pid, strings.TrimSpace(fds.Stdout.(*bytes.Buffer).String()), nil
 	}
 	return pid, "", nil
 }
 
-func getCmdOutput(envs *ExpandEnvs, cmd string) (string, error) {
-	_, output, err := runCommand(envs, cmd, true, commandFds{}, false)
+func runCommand(envs *ExpandEnvs, cmd, cmdDir string, needsOutput bool, fds commandFds, background bool) (pid int, output string, err error) {
+	sections, err := argv.Argv(
+		cmd,
+		func(cmd string) (string, error) {
+			return getCmdStringOutput(envs, cmdDir, cmd)
+		},
+		envs.expandString,
+	)
+	if err != nil {
+		return 0, "", fmt.Errorf("parse command string failed: %s", err)
+	}
+	if len(sections) == 0 {
+		return 0, "", fmt.Errorf("empty command line string")
+	}
+	return execCommand(envs, sections, cmdDir, needsOutput, fds, background)
+}
+
+func getCmdStringOutput(envs *ExpandEnvs, cmd, cmdDir string) (string, error) {
+	_, output, err := runCommand(envs, cmd, cmdDir, true, commandFds{}, false)
 	return output, err
 }
 
@@ -547,4 +557,27 @@ func openFile(name string, append bool) (*os.File, error) {
 		return nil, fmt.Errorf("create parent directories failed: %w", err)
 	}
 	return os.OpenFile(name, flags, 00644)
+}
+
+func stringUnquote(s string) string {
+	l := len(s)
+	if l >= 2 {
+		switch s[0] {
+		case '"', '\'':
+			if s[l-1] == s[0] {
+				ns := s[1 : l-1]
+				var valid = true
+				for i := range ns {
+					if ns[i] == s[0] {
+						valid = false
+						break
+					}
+				}
+				if valid {
+					return ns
+				}
+			}
+		}
+	}
+	return s
 }

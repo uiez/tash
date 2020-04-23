@@ -80,19 +80,38 @@ func lookupConfigurationPath() (path string, isRecorded bool) {
 		}
 		dir = parent
 	}
-	return "", false
+}
+
+func (c *Configuration) importFile(log logger, path string) {
+	switch filepath.Ext(path) {
+	case ".env":
+		content, err := ioutil.ReadFile(path)
+		if err != nil {
+			log.fatalln("read env file content failed:", err)
+			return
+		}
+		c.Envs = append(c.Envs, syntax.Env{
+			Value: string(content),
+		})
+	default:
+		fallthrough
+	case ".yaml", ".yml":
+		c.buildFrom(log, path)
+	}
 }
 
 func (c *Configuration) buildFrom(log logger, path string) {
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.fatalln("read config file failed:", path, err)
+		return
 	}
 
 	var configs syntax.Configuration
 	err = yaml.Unmarshal(content, &configs)
 	if err != nil {
 		log.fatalln("parsing config file failed:", path, err)
+		return
 	}
 
 	if len(configs.Imports) > 0 {
@@ -102,7 +121,7 @@ func (c *Configuration) buildFrom(log logger, path string) {
 				imp = filepath.Join(dir, imp)
 			}
 
-			c.buildFrom(log, imp)
+			c.importFile(log, imp)
 		}
 	}
 	c.Envs = append(c.Envs, configs.Envs...)

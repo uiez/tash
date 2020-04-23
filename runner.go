@@ -634,7 +634,7 @@ func (r *runner) runActionLoop(action syntax.ActionLoop, envs *ExpandEnvs) {
 }
 
 func (r *runner) runCommand(vars *ExpandEnvs, cmd string, fds commandFds, background bool) (pid int) {
-	pid, _, err := runCommand(vars, cmd, false, fds, background)
+	pid, _, err := runCommand(vars, cmd, "", false, fds, background)
 	if err != nil {
 		r.fatalln("run command failed:", err)
 		return pid
@@ -841,7 +841,7 @@ func (r *runner) runActionTask(action syntax.ActionTask, envs *ExpandEnvs) {
 	}
 }
 
-func (r *runner) expandAndGlob(path string, envs *ExpandEnvs, mustBeFile bool) ([]string, bool) {
+func (r *runner) expandPathAndGlob(path string, envs *ExpandEnvs, mustBeFile bool) ([]string, bool) {
 	err := envs.expandStringPtrs(&path)
 	if err != nil {
 		r.fatalln(err)
@@ -912,7 +912,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 		})
 		r.next(func() {
 			if a.Del != "" {
-				matched, ok := r.expandAndGlob(a.Del, envs, false)
+				matched, ok := r.expandPathAndGlob(a.Del, envs, false)
 				if !ok {
 					return
 				}
@@ -930,7 +930,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 				if len(a.Replace.Replaces) <= 0 || len(a.Replace.Replaces)%2 != 0 {
 					r.fatalln("invalid replaces pairs")
 				}
-				matched, ok := r.expandAndGlob(a.Replace.File, envs, true)
+				matched, ok := r.expandPathAndGlob(a.Replace.File, envs, true)
 				if !ok {
 					return
 				}
@@ -950,7 +950,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 		})
 		r.next(func() {
 			if a.Chmod.Path != "" {
-				matched, ok := r.expandAndGlob(a.Chmod.Path, envs, false)
+				matched, ok := r.expandPathAndGlob(a.Chmod.Path, envs, false)
 				if !ok {
 					return
 				}
@@ -1113,6 +1113,28 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 				r.infoln("Wait.")
 
 				r.runActionWait(a.Wait, envs)
+			}
+		})
+		r.next(func() {
+			if a.Warn != "" {
+				r.debugln("Warn.")
+				err := envs.expandStringPtrs(&a.Warn)
+				if err != nil {
+					r.fatalln(err)
+					return
+				}
+				r.warnln(a.Warn)
+			}
+		})
+		r.next(func() {
+			if a.Fatal != "" {
+				r.debugln("Fatal.")
+				err := envs.expandStringPtrs(&a.Fatal)
+				if err != nil {
+					r.fatalln(err)
+					return
+				}
+				r.fatalln(a.Fatal)
 			}
 		})
 	}

@@ -10,6 +10,10 @@ type processActions struct {
 	Cmd ActionCmd
 	// wait process exit
 	Wait ActionWait
+	// print warning
+	Warn ActionWarn
+	// print error and exit(can be ignored by silent rules)
+	Fatal ActionFatal
 }
 
 // command execution
@@ -50,3 +54,7 @@ type ActionWait struct {
 	Process string
 	Pid     string
 }
+
+type ActionWarn = string
+
+type ActionFatal = string
