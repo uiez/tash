@@ -6,12 +6,14 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -457,6 +459,15 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 			})
 		//case "-w":
 		//case "-x":
+		case syntax.Op_file_binary:
+			_, err := exec.LookPath(value)
+			if err != nil {
+				if errors.Is(err, exec.ErrNotFound) {
+					return false, nil
+				}
+				return false, fmt.Errorf("lookup executable binary failed: %w", err)
+			}
+			return true, nil
 		default:
 			return false, fmt.Errorf("invalid condition operator: %s", operator)
 		}

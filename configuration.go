@@ -83,8 +83,16 @@ func lookupConfigurationPath() (path string, isRecorded bool) {
 }
 
 func (c *Configuration) importFile(log logger, path string) {
+	var err error
+	path, err = filepath.Abs(path)
+	if err != nil {
+		log.fatalln("get file abs path failed:", err)
+		return
+	}
+
 	switch filepath.Ext(path) {
 	case ".env":
+		log.debugln("import environment file:", path)
 		content, err := ioutil.ReadFile(path)
 		if err != nil {
 			log.fatalln("read env file content failed:", err)
@@ -94,8 +102,9 @@ func (c *Configuration) importFile(log logger, path string) {
 			Value: string(content),
 		})
 	default:
-		fallthrough
+		log.debugln("ignore file:", path)
 	case ".yaml", ".yml":
+		log.debugln("import tash config file:", path)
 		c.buildFrom(log, path)
 	}
 }

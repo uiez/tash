@@ -42,7 +42,7 @@ type Task struct {
 	// current directory if empty
 	WorkDir string
 
-	// task arguments(environment)
+	// task arguments(can be passed as environment or command line options)
 	Args []TaskArgument
 	// a sequence of task actions.
 	Actions []Action

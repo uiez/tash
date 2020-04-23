@@ -35,6 +35,7 @@ const (
 	Op_file_notEmpty             = "file.notEmpty"
 	Op_file_socket               = "file.socket"
 	Op_file_setuid               = "file.setuid"
+	Op_file_binary               = "file.binary"
 )
 
 var OperatorAlias = map[string]string{
@@ -73,4 +74,5 @@ var OperatorAlias = map[string]string{
 	"-s":   Op_file_notEmpty,
 	"-S":   Op_file_socket,
 	"-u":   Op_file_setuid,
+	"-B":   Op_file_binary,
 }

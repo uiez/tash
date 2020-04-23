@@ -127,7 +127,7 @@ func listTasks(configs *Configuration, log indentLogger, taskNames []string, sho
 	}
 }
 
-func runTasks(configs *Configuration, log indentLogger, names []string) {
+func runTasks(configs *Configuration, log indentLogger, names []string, args []string) {
 	if len(names) == 0 {
 		log.fatalln("no tasks to run")
 		return
@@ -138,10 +138,8 @@ func runTasks(configs *Configuration, log indentLogger, names []string) {
 		return
 	}
 
-	r := runner{
-		indentLogger: log,
-		configs:      configs,
-	}
+	r := newRunner(nil, log, configs)
+	r.globalArgs = args
 	for i, name := range names {
 		if i > 0 {
 			r.infoln() // create new line
@@ -151,7 +149,8 @@ func runTasks(configs *Configuration, log indentLogger, names []string) {
 }
 
 type runner struct {
-	parent *runner
+	globalArgs []string
+	parent     *runner
 
 	indentLogger
 	configs      *Configuration
@@ -220,35 +219,50 @@ func (r *runner) searchTemplate(name string) ([]syntax.Action, bool) {
 
 func (r *runner) createTaskEnvs(name string, task syntax.Task, workDir string) *ExpandEnvs {
 	envs := newExpandEnvs()
+	r.debugln(">>>>> adds system environments")
 	envs.parsePairs(r.log(), os.Environ(), false)
+	if len(r.root().globalArgs) > 0 {
+		r.debugln(">>>>> adds user provided arguments")
+		for _, a := range r.root().globalArgs {
+			blocks := splitBlocks(a)
+			envs.parsePairs(r.log(), blocks, false)
+		}
+	}
+	r.debugln(">>>>> adds builtin environments")
 	envs.add(r.log(), syntax.BUILTIN_ENV_WORKDIR, workDir, false)
 	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_OS, runtime.GOOS, false)
 	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_ARCH, runtime.GOARCH, false)
 	envs.add(r.log(), syntax.BUILTIN_ENV_TASK_NAME, name, false)
-	envs.parseEnvs(r.log(), r.configs.Envs)
-	for _, arg := range task.Args {
-		if arg.Env == "" {
-			r.fatalln("empty task argument name")
-			return envs
-		}
+	if len(r.configs.Envs) > 0 {
+		r.debugln(">>>>> add configuration environments")
+		envs.parseEnvs(r.log(), r.configs.Envs)
+	}
+	if len(task.Args) > 0 {
+		r.debugln(">>>>> checking task default arguments")
+		for _, arg := range task.Args {
+			if arg.Env == "" {
+				r.fatalln("empty task argument name")
+				return envs
+			}
 
-		val, err := envs.lookupAndFilter(arg.Env, nil)
-		if err != nil {
-			r.fatalln("lookup task argument value failed:", arg.Env, err)
-			return envs
-		}
-		if val != "" {
-			continue
-		}
+			val, err := envs.lookupAndFilter(arg.Env, nil)
+			if err != nil {
+				r.fatalln("lookup task argument value failed:", arg.Env, err)
+				return envs
+			}
+			if val != "" {
+				continue
+			}
 
-		err = envs.expandStringPtrs(&arg.Default)
-		if err != nil {
-			r.fatalln("expand task args failed:", arg.Env, err)
-			return envs
-		}
+			err = envs.expandStringPtrs(&arg.Default)
+			if err != nil {
+				r.fatalln("expand task args failed:", arg.Env, err)
+				return envs
+			}
 
-		r.debugln("uses task argument default value:", arg.Env)
-		envs.add(r.log(), arg.Env, arg.Default, false)
+			r.debugln("uses task argument default value:", arg.Env)
+			envs.add(r.log(), arg.Env, arg.Default, false)
+		}
 	}
 
 	return envs
@@ -979,6 +993,9 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 				templates := splitBlocks(a.Template)
 				r.infoln("Template:", templates)
 				for _, template := range templates {
+					if len(templates) > 1 {
+						r.infoln(">>>>> template:", template)
+					}
 					r.runActionTemplate(template, envs)
 				}
 			}
@@ -1056,9 +1073,12 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 					r.fatalln(err)
 					return
 				}
-				blocks := splitBlocks(a.Task.Name)
-				r.infoln("Task:", blocks)
-				for _, name := range blocks {
+				tasks := splitBlocks(a.Task.Name)
+				r.infoln("Task:", tasks)
+				for _, name := range tasks {
+					if len(tasks) > 1 {
+						r.infoln(">>>>>task:", name)
+					}
 					r.runActionTask(name, a.Task.PassEnvs, a.Task.ReturnEnvs, envs)
 				}
 			}
