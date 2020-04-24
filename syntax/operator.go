@@ -39,8 +39,8 @@ const (
 )
 
 var OperatorAlias = map[string]string{
-	"?":    Op_bool_true,
-	"!":    Op_bool_not,
+	"-?":   Op_bool_true,
+	"-!":   Op_bool_not,
 	"not":  Op_bool_not,
 	">":    Op_string_greaterThan,
 	">=":   Op_string_greaterThanOrEqual,
