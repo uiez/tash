@@ -647,15 +647,6 @@ func (r *runner) runActionLoop(action syntax.ActionLoop, envs *ExpandEnvs) {
 	})
 }
 
-func (r *runner) runCommand(vars *ExpandEnvs, cmd string, fds commandFds, background bool) (pid int) {
-	pid, _, err := runCommand(vars, cmd, "", false, fds, background)
-	if err != nil {
-		r.fatalln("run command failed:", err)
-		return pid
-	}
-	return pid
-}
-
 func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
 	envs.add(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, "", false)
 
@@ -696,10 +687,12 @@ func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
 			fds.Stderr = out
 		}
 	}
-	pid := r.runCommand(envs, action.Exec, fds, action.Background)
-	if pid > 0 {
-		envs.add(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, strconv.Itoa(pid), false)
+	pid, _, err := runCommand(envs, action.Exec, action.WorkDir, false, fds, action.Background)
+	if err != nil {
+		r.fatalln("run command failed:", err)
+		return
 	}
+	envs.add(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, strconv.Itoa(pid), false)
 }
 
 func (r *runner) runActionWatch(action syntax.ActionWatch, envs *ExpandEnvs) {
@@ -876,7 +869,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 		})
 		r.next(func() {
 			if a.Cmd.Exec != "" {
-				err := envs.expandStringPtrs(&a.Cmd.Exec, &a.Cmd.Stdin, &a.Cmd.Stdout, &a.Cmd.Stderr)
+				err := envs.expandStringPtrs(&a.Cmd.Exec, &a.Cmd.WorkDir, &a.Cmd.Stdin, &a.Cmd.Stdout, &a.Cmd.Stderr)
 				if err != nil {
 					r.fatalln(err)
 					return

@@ -18,6 +18,8 @@ type processActions struct {
 
 // command execution
 type ActionCmd struct {
+	// working directory
+	WorkDir string
 	// command line string, supports unix pipe
 	Exec string
 
