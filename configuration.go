@@ -70,13 +70,17 @@ func lookupConfigurationPath() (path string, isRecorded bool) {
 	currDir, _ := filepath.Abs(".")
 	for dir := currDir; ; {
 		path := filepath.Join(dir, defaultConf)
-		_, err := os.Stat(path)
-		if err == nil || !os.IsNotExist(err) {
-			return path, false
+		stat, err := os.Stat(path)
+		if err == nil && !stat.IsDir() {
+			relpath, err := filepath.Rel(currDir, path)
+			if err != nil {
+				return path, false
+			}
+			return relpath, false
 		}
 		parent := filepath.Dir(dir)
 		if parent == "" || parent == dir {
-			return path, false
+			return "", false
 		}
 		dir = parent
 	}
