@@ -22,10 +22,12 @@ type Configuration struct {
 	Tasks map[string]syntax.Task
 }
 
-func parseConfiguration(log logger, conf string, saveConf bool) *Configuration {
+func parseConfiguration(log indentLogger, conf string, saveConf bool) *Configuration {
+	currDir, _ := os.Getwd()
+
 	if conf == "" {
 		var recorded bool
-		conf, recorded = lookupConfigurationPath()
+		conf, recorded = lookupConfigurationPath(currDir)
 		if conf == "" {
 			log.fatalln("couldn't find configuration file in current or parent directories")
 		}
@@ -48,13 +50,13 @@ func parseConfiguration(log logger, conf string, saveConf bool) *Configuration {
 		Templates: make(map[string][]syntax.Action),
 		Tasks:     make(map[string]syntax.Task),
 	}
-	c.buildFrom(log, conf)
+	c.buildFrom(log, currDir, conf)
 	return c
 }
 
 const recordFile = ".tashfile"
 
-func lookupConfigurationPath() (path string, isRecorded bool) {
+func lookupConfigurationPath(currDir string) (path string, isRecorded bool) {
 	content, err := ioutil.ReadFile(recordFile)
 	if err == nil {
 		path := string(content)
@@ -67,7 +69,6 @@ func lookupConfigurationPath() (path string, isRecorded bool) {
 	}
 
 	const defaultConf = "tash.yaml"
-	currDir, _ := filepath.Abs(".")
 	for dir := currDir; ; {
 		path := filepath.Join(dir, defaultConf)
 		stat, err := os.Stat(path)
@@ -86,17 +87,41 @@ func lookupConfigurationPath() (path string, isRecorded bool) {
 	}
 }
 
-func (c *Configuration) importFile(log logger, path string) {
-	var err error
-	path, err = filepath.Abs(path)
+func (c *Configuration) importPath(log indentLogger, baseDir, path string) {
+	var relpath string
+	{
+		var err error
+		path, err = filepath.Abs(path)
+		if err != nil {
+			log.fatalln("get file abs path failed:", err)
+			return
+		}
+
+		p, err := filepath.Rel(baseDir, path)
+		if err == nil {
+			relpath = p
+		} else {
+			relpath = path
+		}
+	}
+
+	info, err := os.Stat(path)
 	if err != nil {
-		log.fatalln("get file abs path failed:", err)
+		if os.IsNotExist(err) {
+			log.warnln("file imported doesn't existed, skip:", relpath)
+		} else {
+			log.warnln("retrieve file status failed:", relpath, err)
+		}
+		return
+	}
+	if info.IsDir() {
+		log.warnln("imported path is directory, skipped, file status failed", relpath)
 		return
 	}
 
 	switch filepath.Ext(path) {
 	case ".env":
-		log.debugln("import environment file:", path)
+		log.debugln("import environment file:", relpath)
 		content, err := ioutil.ReadFile(path)
 		if err != nil {
 			log.fatalln("read env file content failed:", err)
@@ -106,14 +131,14 @@ func (c *Configuration) importFile(log logger, path string) {
 			Value: string(content),
 		})
 	default:
-		log.debugln("ignore file:", path)
+		log.debugln("ignore file:", relpath)
 	case ".yaml", ".yml":
-		log.debugln("import tash config file:", path)
-		c.buildFrom(log, path)
+		log.debugln("import tash config file:", relpath)
+		c.buildFrom(log.addIndent(), baseDir, path)
 	}
 }
 
-func (c *Configuration) buildFrom(log logger, path string) {
+func (c *Configuration) buildFrom(log indentLogger, baseDir, path string) {
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.fatalln("read config file failed:", path, err)
@@ -135,7 +160,7 @@ func (c *Configuration) buildFrom(log logger, path string) {
 				return fmt.Errorf("glob path failed: %w", err)
 			}
 			for _, m := range matched {
-				c.importFile(log, m)
+				c.importPath(log, baseDir, m)
 			}
 			return nil
 		})

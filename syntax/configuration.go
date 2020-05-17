@@ -1,9 +1,11 @@
 package syntax
 
 type Configuration struct {
-	// import other config files, can be both absolute or relative path.
+	// import other config files, supports path globbing, can be both absolute or relative path.
 	// relative path is based on current file directory.
 	// supports import tash config file(.yaml,.yml) and environment config file(.env)
+	//
+	// directories will be ignored
 	Imports string
 
 	// defines global environment variables.
