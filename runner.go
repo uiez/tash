@@ -137,6 +137,13 @@ func runTasks(configs *Configuration, log indentLogger, names []string, args []s
 		log.fatalln("get current directory failed:", err)
 		return
 	}
+	for _, name := range names {
+		_, has := configs.Tasks[name]
+		if !has {
+			log.fatalln("task not found:", name)
+			return
+		}
+	}
 
 	r := newRunner(nil, log, configs)
 	r.globalArgs = args
