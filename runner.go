@@ -341,7 +341,10 @@ func (r *runner) runActionCopy(cpy syntax.ActionCopy, envs *ExpandEnvs) {
 		r.debugln("resource reuse.")
 		return
 	}
-	var sourcePath string
+	var (
+		sourcePath  string
+		needsRemove bool
+	)
 	if strings.Contains(cpy.SourceUrl, "://") {
 		sourceUrl := cpy.SourceUrl
 		ul, err := url.Parse(sourceUrl)
@@ -362,6 +365,7 @@ func (r *runner) runActionCopy(cpy syntax.ActionCopy, envs *ExpandEnvs) {
 				return
 			}
 			sourcePath = path
+			needsRemove = true
 		default:
 			r.fatalln("unsupported source url schema:", ul.Scheme)
 			return
@@ -369,6 +373,11 @@ func (r *runner) runActionCopy(cpy syntax.ActionCopy, envs *ExpandEnvs) {
 	} else {
 		sourcePath = cpy.SourceUrl
 	}
+	defer func() {
+		if needsRemove {
+			os.Remove(sourcePath)
+		}
+	}()
 	if !r.resourceIsValid(cpy, sourcePath) {
 		r.fatalln("resource source invalid:", cpy.SourceUrl)
 		return
