@@ -299,13 +299,16 @@ func (r *runner) runTaskByName(name, baseDir string) {
 	r.addIndent().runTask(name, task, baseDir)
 }
 
-func (r *runner) resourceNeedsSync(cpy syntax.ActionCopy) bool {
+func (r *runner) resourceNeedsSync(cpy syntax.ActionCopy, isLocalFile bool) bool {
 	info, err := os.Stat(cpy.DestPath)
 	if err != nil {
 		return true
 	}
-	if cpy.Hash.Sig == "" || info.IsDir() { // always sync
+	if info.IsDir() {
 		return true
+	}
+	if cpy.Hash.Sig == "" {
+		return isLocalFile
 	}
 
 	fd, err := os.OpenFile(cpy.DestPath, os.O_RDONLY, 0)
@@ -337,14 +340,28 @@ func (r *runner) resourceIsValid(res syntax.ActionCopy, path string) bool {
 }
 
 func (r *runner) runActionCopy(cpy syntax.ActionCopy, envs *ExpandEnvs) {
-	if !r.resourceNeedsSync(cpy) {
-		r.debugln("resource reuse.")
-		return
-	}
 	var (
 		sourcePath  string
 		needsRemove bool
+		force       bool
 	)
+	if cpy.Force != "" {
+		val, err := envs.expandString(cpy.Force)
+		if err != nil {
+			r.fatalln(err)
+			return
+		}
+		ok, err := checkCondition(envs, val, "", nil)
+		if err != nil {
+			r.fatalln("couldn't eval value of 'force' field:", cpy.Force, err)
+			return
+		}
+		force = ok
+
+		if force {
+			r.debugln("force sync resource.")
+		}
+	}
 	if strings.Contains(cpy.SourceUrl, "://") {
 		sourceUrl := cpy.SourceUrl
 		ul, err := url.Parse(sourceUrl)
@@ -354,11 +371,19 @@ func (r *runner) runActionCopy(cpy syntax.ActionCopy, envs *ExpandEnvs) {
 		}
 		switch ul.Scheme {
 		case "file":
+			if !force && !r.resourceNeedsSync(cpy, true) {
+				r.debugln("resource reuse.")
+				return
+			}
 			sourcePath = ul.Path
 			if runtime.GOOS == "windows" {
 				sourcePath = strings.TrimPrefix(sourcePath, "/")
 			}
 		case "http", "https":
+			if !force && !r.resourceNeedsSync(cpy, false) {
+				r.debugln("resource reuse.")
+				return
+			}
 			path, err := downloadFile(cpy.SourceUrl)
 			if err != nil {
 				r.fatalln("download file failed:", cpy.SourceUrl, err)
@@ -371,6 +396,10 @@ func (r *runner) runActionCopy(cpy syntax.ActionCopy, envs *ExpandEnvs) {
 			return
 		}
 	} else {
+		if !force && !r.resourceNeedsSync(cpy, true) {
+			r.debugln("resource reuse.")
+			return
+		}
 		sourcePath = cpy.SourceUrl
 	}
 	defer func() {

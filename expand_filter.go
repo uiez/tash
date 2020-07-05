@@ -489,7 +489,7 @@ func init() {
 			return "", fmt.Errorf("args is not needed")
 		}
 		content, err := ioutil.ReadFile(val)
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
 		return string(content), nil

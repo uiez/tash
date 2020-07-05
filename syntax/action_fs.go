@@ -32,6 +32,8 @@ type ActionCopy struct {
 	SourceUrl string
 	// if source is directory, destPath will be removed first, than copy again
 	DestPath string
+	// Force
+	Force string
 	// hash checking for file
 	Hash struct {
 		// hash algorithm, support SHA1, MD5 and SHA256, sha1 by default.

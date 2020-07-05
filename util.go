@@ -180,6 +180,9 @@ func downloadFile(url string) (string, error) {
 		return "", fmt.Errorf("create download request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("failed to fetch resource: %s", resp.Status)
+	}
 
 	fd, err := ioutil.TempFile("", "tash*")
 	if err != nil {
