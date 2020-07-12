@@ -121,20 +121,29 @@ func (e *ExpandEnvs) lookupAndFilter(name string, filters []string) (string, err
 	}
 
 	for _, filter := range filters {
-		argv, err := argv.Argv(filter, nil, e.expandString)
+		originFilter := filter
+		filter = stringUnquote(filter)
+		filter, err := e.expandString(filter)
 		if err != nil {
-			return "", fmt.Errorf("invalid expand filter: %s, %w", filter, err)
+			return "", fmt.Errorf("invalid expand filter: %s, %w", originFilter, err)
+		}
+
+		argv, err := argv.Argv(filter, nil, func(s string) (string, error) {
+			return s, nil
+		})
+		if err != nil {
+			return "", fmt.Errorf("invalid expand filter: %s, %w", originFilter, err)
 		}
 		if len(argv) != 1 || len(argv[0]) == 0 {
-			return "", fmt.Errorf("invalid expand filter syntax: %s", filter)
+			return "", fmt.Errorf("invalid expand filter syntax: %s, %v", originFilter, argv)
 		}
 		filterFunc, has := expandFilters[argv[0][0]]
 		if !has {
-			return "", fmt.Errorf("unrecognized expand filter: %s", filter)
+			return "", fmt.Errorf("unrecognized expand filter: %s", originFilter)
 		}
 		val, err = filterFunc(val, argv[0][1:], e)
 		if err != nil {
-			return "", fmt.Errorf("execute expand filter failed: %s, %w", filter, err)
+			return "", fmt.Errorf("execute expand filter failed: %s, %w", originFilter, err)
 		}
 	}
 	return val, nil
@@ -150,19 +159,31 @@ func (e *ExpandEnvs) expandString(s string) (string, error) {
 	var (
 		state = statePlain
 
-		buf     []rune
-		nameBuf []rune
+		buf              []rune
+		nameBuf          []rune
+		nameBlockFilters []int
+		nameBlockDepth   int
 
 		err error
 	)
 	resolveVar := func() []rune {
-		name := string(nameBuf)
-
+		var name string
 		var filters []string
-		if strings.Index(name, "|") >= 0 {
-			secs := stringSplitAndTrim(name, "|")
-			name = secs[0]
-			filters = secs[1:]
+		if len(nameBlockFilters) > 0 {
+			for i := range nameBlockFilters {
+				if i == 0 {
+					name = string(nameBuf[:nameBlockFilters[i]])
+				} else {
+					filters = append(filters, string(nameBuf[nameBlockFilters[i-1]+1:nameBlockFilters[i]]))
+				}
+			}
+			filters = append(filters, string(nameBuf[nameBlockFilters[len(nameBlockFilters)-1]+1:]))
+		} else {
+			name = string(nameBuf)
+		}
+		name = strings.TrimSpace(name)
+		for i := range filters {
+			filters[i] = strings.TrimSpace(filters[i])
 		}
 		var v string
 		v, err = e.lookupAndFilter(name, filters)
@@ -177,6 +198,8 @@ func (e *ExpandEnvs) expandString(s string) (string, error) {
 			case '$':
 				state = stateVar
 				nameBuf = nameBuf[:0]
+				nameBlockFilters = nameBlockFilters[:0]
+				nameBlockDepth = 0
 			case '\\':
 				if i < l-1 {
 					i++
@@ -216,12 +239,25 @@ func (e *ExpandEnvs) expandString(s string) (string, error) {
 					i++
 					nameBuf = append(nameBuf, rs[i])
 				}
-			case '}':
-				buf = append(buf, resolveVar()...)
-				if err != nil {
-					return "", err
+			case '{':
+				nameBuf = append(nameBuf, rs[i])
+				nameBlockDepth++
+			case '|':
+				nameBuf = append(nameBuf, rs[i])
+				if nameBlockDepth == 0 {
+					nameBlockFilters = append(nameBlockFilters, len(nameBuf)-1)
 				}
-				state = statePlain
+			case '}':
+				if nameBlockDepth > 0 {
+					nameBuf = append(nameBuf, rs[i])
+					nameBlockDepth--
+				} else {
+					buf = append(buf, resolveVar()...)
+					if err != nil {
+						return "", err
+					}
+					state = statePlain
+				}
 			default:
 				nameBuf = append(nameBuf, rs[i])
 			}

@@ -961,6 +961,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 					return
 				}
 				r.infoln("Replace:", matched)
+				r.debugln("Replacements:", a.Replace.Replaces)
 				replacer, err := fileReplacer(a.Replace.Replaces, a.Replace.Regexp)
 				if err != nil {
 					r.fatalln("build replacer failed:", err)

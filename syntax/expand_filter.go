@@ -21,6 +21,22 @@ const (
 	Ef_string_replace = "string.replace"
 	// args: [old new]..., do regexp replacing
 	Ef_string_regexpReplace = "string.regexpReplace"
+	// args: searching, search string
+	Ef_string_index = "string.index"
+	// args: searching, search string
+	Ef_string_lastIndex = "string.lastIndex"
+
+	// number calculating
+	Ef_number_add = "number.add"
+	Ef_number_sub = "number.sub"
+	Ef_number_div = "number.div"
+	Ef_number_mul = "number.mul"
+	Ef_number_mod = "number.mod"
+
+	// args: [operator [compare]] ok no
+	Ef_condition_select = "condition.select"
+	// args: [operator [compare]], syntax sugar to condition.select
+	Ef_condition_check = "condition.check"
 
 	// sort strings, args: 0: split/join separator is ' ', 1: split/join separator is args[0]
 	Ef_array_sort = "array.sort"
