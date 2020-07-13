@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/cosiner/argv"
@@ -30,6 +31,9 @@ func (e *ExpandEnvs) add(log logger, k, v string, expand bool) {
 
 	log.debugln("env add:", k, v)
 	e.envs[k] = v
+	if k == "PATH" {
+		os.Setenv(k, v)
+	}
 }
 
 func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []syntax.Env) {

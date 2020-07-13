@@ -240,6 +240,7 @@ func (r *runner) createTaskEnvs(name string, task syntax.Task, workDir string) *
 	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_OS, runtime.GOOS, false)
 	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_ARCH, runtime.GOARCH, false)
 	envs.add(r.log(), syntax.BUILTIN_ENV_TASK_NAME, name, false)
+	envs.add(r.log(), syntax.BUILTIN_ENV_PATHLISTSEP, string(os.PathListSeparator), false)
 	if len(r.configs.Envs) > 0 {
 		r.debugln(">>>>> add configuration environments")
 		envs.parseEnvs(r.log(), r.configs.Envs)
