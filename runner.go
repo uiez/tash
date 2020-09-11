@@ -16,7 +16,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/mitchellh/go-ps"
-	"github.com/zhuah/tash/syntax"
+	"github.com/uiez/tash/syntax"
 )
 
 type indentLogger struct {
@@ -158,7 +158,7 @@ func runTasks(configs *Configuration, log indentLogger, names []string, args []s
 type runner struct {
 	globalArgs []string
 	parent     *runner
-
+	
 	indentLogger
 	configs      *Configuration
 	noExitOnFail bool

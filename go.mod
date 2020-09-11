@@ -1,4 +1,4 @@
-module github.com/zhuah/tash
+module github.com/uiez/tash
 
 go 1.14
 

@@ -22,7 +22,7 @@ import (
 
 	"github.com/cosiner/argv"
 	"github.com/mattn/go-zglob"
-	"github.com/zhuah/tash/syntax"
+	"github.com/uiez/tash/syntax"
 )
 
 type logger interface {

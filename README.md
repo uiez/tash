@@ -7,7 +7,7 @@ simple, declarative, cross-platform, doesn't depends on unix shell or makefile.
 
 # Install
 
-* With go installed: `go get github.com/zhuah/tash`
+* With go installed: `go get github.com/uiez/tash`
 * Prebuilt binaries: TODO.
 
 # Configuration file location
@@ -99,7 +99,7 @@ tasks:
 ```
 
 * skia go binding
-[tash.yaml](https://github.com/zhuah/skia-go/blob/master/tash.yaml)
+[tash.yaml](https://github.com/uiez/skia-go/blob/master/tash.yaml)
 
 # Configuration Syntax
 defined in [syntax](/syntax) folder.

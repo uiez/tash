@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/ghodss/yaml"
-	"github.com/zhuah/tash/syntax"
+	"github.com/uiez/tash/syntax"
 )
 
 type Configuration struct {

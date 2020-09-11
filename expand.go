@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/cosiner/argv"
-	"github.com/zhuah/tash/syntax"
+	"github.com/uiez/tash/syntax"
 )
 
 type ExpandEnvs struct {

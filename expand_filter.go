@@ -14,7 +14,7 @@ import (
 	"unicode"
 
 	"github.com/mattn/go-zglob"
-	"github.com/zhuah/tash/syntax"
+	"github.com/uiez/tash/syntax"
 )
 
 func parseRange(l int, args []string) (start, end int, err error) {
