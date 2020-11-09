@@ -23,12 +23,8 @@ by default, tash will lookup `tash.yaml` under current/ancestor directories, or 
 ```YAML
 templates:
   build:
-    - if:
-        check: ${GOOS | "==" "windows"}
-        actions:
-          env: EXECUTABLE_EXT=.exe
-    - cmd:
-        exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH}$EXECUTABLE_EXT
+    cmd:
+      exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH}${GOOS | == windows | "?:" .exe}
 
 tasks:
   native:
