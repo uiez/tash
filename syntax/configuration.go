@@ -113,6 +113,7 @@ type Task struct {
 }
 
 type Action struct {
+	On string
 	contextActions
 	flowActions
 	fsActions

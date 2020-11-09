@@ -183,12 +183,6 @@ func (r *runner) root() *runner {
 	return rt
 }
 
-func (r *runner) next(fn func()) {
-	if !r.root().failed {
-		fn()
-	}
-}
-
 func (r *runner) doExit() {
 	rt := r.root()
 	rt.failed = true
@@ -794,265 +788,245 @@ func (r *runner) expandPathBlockAndGlob(path string, envs *ExpandEnvs, mustBeFil
 
 func (r *runner) runActions(envs *ExpandEnvs, a syntax.ActionList) {
 	for _, a := range a.Actions() {
-		r.next(func() {
-			if a.Env.Length() > 0 {
-				r.debugln("Env")
-				envs.parseEnv(r.addIndentIfDebug().log(), a.Env)
+		if a.On != "" {
+			val, err := envs.expandString(a.On)
+			if err != nil {
+				r.fatalln(err)
 			}
-		})
-		r.next(func() {
-			if a.Cmd.Exec != "" {
-				err := envs.expandStringPtrs(&a.Cmd.Exec, &a.Cmd.WorkDir, &a.Cmd.Stdin, &a.Cmd.Stdout, &a.Cmd.Stderr)
-				if err != nil {
-					r.fatalln(err)
-					return
-				}
+			ok, err := checkCondition(envs, val, "", nil)
+			if err != nil {
+				r.fatalln("check condition failed:", err)
+			}
+			if !ok {
+				r.debugln("action condition failed")
+				continue
+			}
 
-				r.infoln("Cmd:", a.Cmd.Exec)
-				r.runActionCmd(a.Cmd, envs)
+			r.debugln("action condition passed")
+		}
+		var done bool
+		next := func(cond bool, fn func()) {
+			if cond && !done && !r.root().failed {
+				fn()
+				done = true
 			}
+		}
+		next(a.Env.Length() > 0, func() {
+			r.debugln("Env")
+			envs.parseEnv(r.addIndentIfDebug().log(), a.Env)
 		})
-		r.next(func() {
-			if a.Copy.DestPath != "" {
-				err := envs.expandStringPtrs(&a.Copy.SourceUrl, &a.Copy.DestPath)
-				if err != nil {
-					r.fatalln(err)
-				}
-				ptrsToSlash(&a.Copy.SourceUrl, &a.Copy.DestPath)
-				r.infoln("Copy:", a.Copy.SourceUrl, a.Copy.DestPath)
-				r.runActionCopy(a.Copy, envs)
+		next(a.Cmd.Exec != "", func() {
+			err := envs.expandStringPtrs(&a.Cmd.Exec, &a.Cmd.WorkDir, &a.Cmd.Stdin, &a.Cmd.Stdout, &a.Cmd.Stderr)
+			if err != nil {
+				r.fatalln(err)
+				return
 			}
-			return
-		})
-		r.next(func() {
-			if a.Del != "" {
-				matched, ok := r.expandPathBlockAndGlob(a.Del, envs, false)
-				if !ok {
-					return
-				}
-				r.infoln("Del:", matched)
-				for _, m := range matched {
-					err := os.RemoveAll(m)
-					if err != nil {
-						r.fatalln("task action delete failed:", m, err)
-					}
-				}
-			}
-		})
-		r.next(func() {
-			if a.Replace.File != "" {
-				if len(a.Replace.Replaces) <= 0 || len(a.Replace.Replaces)%2 != 0 {
-					r.fatalln("invalid replaces pairs")
-				}
-				matched, ok := r.expandPathBlockAndGlob(a.Replace.File, envs, true)
-				if !ok {
-					return
-				}
-				r.infoln("Replace:", matched)
-				r.debugln("Replacements:", a.Replace.Replaces)
-				replacer, err := fileReplacer(a.Replace.Replaces, a.Replace.Regexp)
-				if err != nil {
-					r.fatalln("build replacer failed:", err)
-					return
-				}
-				for _, m := range matched {
-					err = replacer(m)
-					if err != nil {
-						r.fatalln("replace file failed:", a.Replace.File, err)
-					}
-				}
-			}
-		})
-		r.next(func() {
-			if a.Chmod.Path != "" {
-				matched, ok := r.expandPathBlockAndGlob(a.Chmod.Path, envs, false)
-				if !ok {
-					return
-				}
-				r.infoln("Chmod:", matched)
-				for _, m := range matched {
-					err := os.Chmod(m, os.FileMode(a.Chmod.Mode))
-					if err != nil {
-						r.fatalln("chmod failed:", m, err)
-					}
-				}
-			}
-		})
-		r.next(func() {
-			if a.Chdir.Actions.Length() > 0 {
-				err := envs.expandStringPtrs(&a.Chdir.Dir)
-				if err != nil {
-					r.fatalln(err)
-					return
-				}
-				r.infoln("Chdir:", a.Chdir.Dir)
-				err = runInDir(a.Chdir.Dir, func() error {
-					r.addIndent().runActions(envs, a.Chdir.Actions)
-					return nil
-				})
-				if err != nil {
-					r.fatalln("chdir failed:", err)
-					return
-				}
-			}
-		})
-		r.next(func() {
-			if a.Mkdir != "" {
-				err := envs.expandStringPtrs(&a.Mkdir)
-				if err != nil {
-					r.fatalln(err)
-					return
-				}
-				blocks := splitBlocks(a.Mkdir)
 
-				r.infoln("Mkdir:", blocks)
-				for _, dir := range blocks {
-					err = os.MkdirAll(dir, 0755)
-					if err != nil {
-						r.fatalln("mkdir failed:", err)
-						return
-					}
-				}
-			}
+			r.infoln("Cmd:", a.Cmd.Exec)
+			r.runActionCmd(a.Cmd, envs)
 		})
-		r.next(func() {
-			if a.Template != "" {
-				templates := splitBlocks(a.Template)
-				r.infoln("Template:", templates)
-				for _, template := range templates {
-					if len(templates) > 1 {
-						r.infoln(">>>>> template:", template)
-					}
-					r.runActionTemplate(template, envs)
-				}
+		next(a.Copy.DestPath != "", func() {
+			err := envs.expandStringPtrs(&a.Copy.SourceUrl, &a.Copy.DestPath)
+			if err != nil {
+				r.fatalln(err)
 			}
+			ptrsToSlash(&a.Copy.SourceUrl, &a.Copy.DestPath)
+			r.infoln("Copy:", a.Copy.SourceUrl, a.Copy.DestPath)
+			r.runActionCopy(a.Copy, envs)
 		})
-		r.next(func() {
-			if len(a.Switch.Cases) > 0 {
-				r.debugln("Switch")
-				r.runActionSwitch(a.Switch, envs)
+		next(a.Del != "", func() {
+			matched, ok := r.expandPathBlockAndGlob(a.Del, envs, false)
+			if !ok {
+				return
 			}
-		})
-		r.next(func() {
-			if a.If.Actions.Length() > 0 || a.If.Else.Length() > 0 {
-				r.debugln("If")
-				r.runActionIf(a.If, envs)
-			}
-		})
-		r.next(func() {
-			if a.Loop.Actions.Length() > 0 {
-				r.debugln("Loop")
-				r.runActionLoop(a.Loop, envs)
-			}
-		})
-		r.next(func() {
-			if a.Silent.Actions.Length() > 0 {
-				r.debugln("Silent")
-				var (
-					showLog    bool
-					allowError bool
-				)
-				for _, flag := range a.Silent.Flags {
-					switch flag {
-					case syntax.SilentFlagShowLog:
-						showLog = true
-					case syntax.SilentFlagAllowError:
-						allowError = true
-					default:
-						r.warnln("invalid silent flag:", flag)
-					}
-				}
-				r.addIndentIfDebug().silent(!showLog, allowError).runActions(envs, a.Silent.Actions)
-			}
-		})
-		r.next(func() {
-			if a.Echo != (syntax.ActionEcho{}) {
-				err := envs.expandStringPtrs(&a.Echo.File, &a.Echo.Content)
+			r.infoln("Del:", matched)
+			for _, m := range matched {
+				err := os.RemoveAll(m)
 				if err != nil {
-					r.fatalln(err)
-					return
+					r.fatalln("task action delete failed:", m, err)
 				}
-				r.infoln("Echo:", a.Echo.File)
-				func() {
-					fd, err := openFile(a.Echo.File, a.Echo.Append)
-					if err != nil {
-						r.fatalln("open file failed:", err)
-						return
-					}
-					defer fd.Close()
-					_, err = fd.WriteString(a.Echo.Content)
-					if err != nil {
-						r.warnln("write file failed:", err)
-					}
-				}()
 			}
 		})
-		r.next(func() {
-			if a.Task.Name != "" {
-				err := envs.expandStringPtrs(&a.Task.Name)
+		next(a.Replace.File != "", func() {
+			if len(a.Replace.Replaces) <= 0 || len(a.Replace.Replaces)%2 != 0 {
+				r.fatalln("invalid replaces pairs")
+			}
+			matched, ok := r.expandPathBlockAndGlob(a.Replace.File, envs, true)
+			if !ok {
+				return
+			}
+			r.infoln("Replace:", matched)
+			r.debugln("Replacements:", a.Replace.Replaces)
+			replacer, err := fileReplacer(a.Replace.Replaces, a.Replace.Regexp)
+			if err != nil {
+				r.fatalln("build replacer failed:", err)
+				return
+			}
+			for _, m := range matched {
+				err = replacer(m)
 				if err != nil {
-					r.fatalln(err)
-					return
-				}
-				tasks := splitBlocks(a.Task.Name)
-				r.infoln("Task:", tasks)
-				for _, name := range tasks {
-					if len(tasks) > 1 {
-						r.infoln(">>>>>task:", name)
-					}
-					r.runActionTask(name, a.Task.PassEnvs, a.Task.ReturnEnvs, envs)
+					r.fatalln("replace file failed:", a.Replace.File, err)
 				}
 			}
 		})
-		r.next(func() {
-			if a.Watch.Actions.Length() > 0 {
-				r.infoln("Watch.")
-				r.runActionWatch(a.Watch, envs)
+		next(a.Chmod.Path != "", func() {
+			matched, ok := r.expandPathBlockAndGlob(a.Chmod.Path, envs, false)
+			if !ok {
+				return
+			}
+			r.infoln("Chmod:", matched)
+			for _, m := range matched {
+				err := os.Chmod(m, os.FileMode(a.Chmod.Mode))
+				if err != nil {
+					r.fatalln("chmod failed:", m, err)
+				}
 			}
 		})
-		r.next(func() {
-			if a.Pkill != (syntax.ActionPkill{}) {
-				r.infoln("Pkill.")
+		next(a.Chdir.Actions.Length() > 0, func() {
+			err := envs.expandStringPtrs(&a.Chdir.Dir)
+			if err != nil {
+				r.fatalln(err)
+				return
+			}
+			r.infoln("Chdir:", a.Chdir.Dir)
+			err = runInDir(a.Chdir.Dir, func() error {
+				r.addIndent().runActions(envs, a.Chdir.Actions)
+				return nil
+			})
+			if err != nil {
+				r.fatalln("chdir failed:", err)
+				return
+			}
+		})
+		next(a.Mkdir != "", func() {
+			err := envs.expandStringPtrs(&a.Mkdir)
+			if err != nil {
+				r.fatalln(err)
+				return
+			}
+			blocks := splitBlocks(a.Mkdir)
 
-				r.runActionPkill(a.Pkill, envs)
-			}
-		})
-		r.next(func() {
-			if a.Sleep > 0 {
-				dur := time.Duration(a.Sleep) * time.Millisecond
-				r.infoln("Sleep:", dur.String())
-
-				time.Sleep(dur)
-			}
-		})
-		r.next(func() {
-			if a.Wait != (syntax.ActionWait{}) {
-				r.infoln("Wait.")
-
-				r.runActionWait(a.Wait, envs)
-			}
-		})
-		r.next(func() {
-			if a.Warn != "" {
-				r.debugln("Warn.")
-				err := envs.expandStringPtrs(&a.Warn)
+			r.infoln("Mkdir:", blocks)
+			for _, dir := range blocks {
+				err = os.MkdirAll(dir, 0755)
 				if err != nil {
-					r.fatalln(err)
+					r.fatalln("mkdir failed:", err)
 					return
 				}
-				r.warnln(a.Warn)
 			}
 		})
-		r.next(func() {
-			if a.Fatal != "" {
-				r.debugln("Fatal.")
-				err := envs.expandStringPtrs(&a.Fatal)
+		next(a.Template != "", func() {
+			templates := splitBlocks(a.Template)
+			r.infoln("Template:", templates)
+			for _, template := range templates {
+				if len(templates) > 1 {
+					r.infoln(">>>>> template:", template)
+				}
+				r.runActionTemplate(template, envs)
+			}
+		})
+		next(len(a.Switch.Cases) > 0, func() {
+			r.debugln("Switch")
+			r.runActionSwitch(a.Switch, envs)
+		})
+		next(a.If.Actions.Length() > 0 || a.If.Else.Length() > 0, func() {
+			r.debugln("If")
+			r.runActionIf(a.If, envs)
+		})
+		next(a.Loop.Actions.Length() > 0, func() {
+			r.debugln("Loop")
+			r.runActionLoop(a.Loop, envs)
+		})
+		next(a.Silent.Actions.Length() > 0, func() {
+			r.debugln("Silent")
+			var (
+				showLog    bool
+				allowError bool
+			)
+			for _, flag := range a.Silent.Flags {
+				switch flag {
+				case syntax.SilentFlagShowLog:
+					showLog = true
+				case syntax.SilentFlagAllowError:
+					allowError = true
+				default:
+					r.warnln("invalid silent flag:", flag)
+				}
+			}
+			r.addIndentIfDebug().silent(!showLog, allowError).runActions(envs, a.Silent.Actions)
+		})
+		next(a.Echo != (syntax.ActionEcho{}), func() {
+			err := envs.expandStringPtrs(&a.Echo.File, &a.Echo.Content)
+			if err != nil {
+				r.fatalln(err)
+				return
+			}
+			r.infoln("Echo:", a.Echo.File)
+			func() {
+				fd, err := openFile(a.Echo.File, a.Echo.Append)
 				if err != nil {
-					r.fatalln(err)
+					r.fatalln("open file failed:", err)
 					return
 				}
-				r.fatalln(a.Fatal)
+				defer fd.Close()
+				_, err = fd.WriteString(a.Echo.Content)
+				if err != nil {
+					r.warnln("write file failed:", err)
+				}
+			}()
+		})
+		next(a.Task.Name != "", func() {
+			err := envs.expandStringPtrs(&a.Task.Name)
+			if err != nil {
+				r.fatalln(err)
+				return
 			}
+			tasks := splitBlocks(a.Task.Name)
+			r.infoln("Task:", tasks)
+			for _, name := range tasks {
+				if len(tasks) > 1 {
+					r.infoln(">>>>>task:", name)
+				}
+				r.runActionTask(name, a.Task.PassEnvs, a.Task.ReturnEnvs, envs)
+			}
+		})
+		next(a.Watch.Actions.Length() > 0, func() {
+			r.infoln("Watch.")
+			r.runActionWatch(a.Watch, envs)
+		})
+		next(a.Pkill != (syntax.ActionPkill{}), func() {
+			r.infoln("Pkill.")
+
+			r.runActionPkill(a.Pkill, envs)
+		})
+		next(a.Sleep > 0, func() {
+			dur := time.Duration(a.Sleep) * time.Millisecond
+			r.infoln("Sleep:", dur.String())
+
+			time.Sleep(dur)
+		})
+		next(a.Wait != (syntax.ActionWait{}), func() {
+			r.infoln("Wait.")
+
+			r.runActionWait(a.Wait, envs)
+		})
+		next(a.Warn != "", func() {
+			r.debugln("Warn.")
+			err := envs.expandStringPtrs(&a.Warn)
+			if err != nil {
+				r.fatalln(err)
+				return
+			}
+			r.warnln(a.Warn)
+		})
+		next(a.Fatal != "", func() {
+			r.debugln("Fatal.")
+			err := envs.expandStringPtrs(&a.Fatal)
+			if err != nil {
+				r.fatalln(err)
+				return
+			}
+			r.fatalln(a.Fatal)
 		})
 	}
 }
