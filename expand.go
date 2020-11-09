@@ -20,8 +20,32 @@ func newExpandEnvs() *ExpandEnvs {
 
 	return vars
 }
+func (e *ExpandEnvs) copy() *ExpandEnvs {
+	ne := ExpandEnvs{
+		envs: make(map[string]string),
+	}
+	for k, v := range e.envs {
+		ne.envs[k] = v
+	}
+	return &ne
+}
 
-func (e *ExpandEnvs) add(log logger, k, v string, expand bool) {
+func (e *ExpandEnvs) remove(k string) {
+	delete(e.envs, k)
+}
+
+func (e *ExpandEnvs) get(k string) (string, bool) {
+	v, has := e.envs[k]
+	return v, has
+}
+
+func (e *ExpandEnvs) set(k, v string) {
+	e.envs[k] = v
+	if k == "PATH" {
+		os.Setenv(k, v)
+	}
+}
+func (e *ExpandEnvs) addAndExpand(log logger, k, v string, expand bool) {
 	if expand {
 		err := e.expandStringPtrs(&v)
 		if err != nil {
@@ -30,29 +54,14 @@ func (e *ExpandEnvs) add(log logger, k, v string, expand bool) {
 	}
 
 	log.debugln("env add:", k, v)
-	e.envs[k] = v
-	if k == "PATH" {
-		os.Setenv(k, v)
-	}
+	e.set(k, v)
 }
 
-func (e *ExpandEnvs) parseEnvs(log indentLogger, envs []syntax.Env) {
-	for _, env := range envs {
-		if env.Value != "" {
-			if env.Name == "" {
-				e.parseBlock(log, env.Value, true)
-			} else {
-				e.add(log, env.Name, env.Value, true)
-			}
-		} else if env.Name != "" {
-			e.envs[env.Name] = ""
-		}
+func (e *ExpandEnvs) parseEnv(log indentLogger, envs syntax.EnvList) {
+	for _, env := range envs.Envs() {
+		blocks := splitBlocks(env)
+		e.parsePairs(log, blocks, true)
 	}
-}
-
-func (e *ExpandEnvs) parseBlock(log logger, block string, expand bool) {
-	blocks := splitBlocks(block)
-	e.parsePairs(log, blocks, expand)
 }
 
 func (e *ExpandEnvs) parsePairs(log logger, items []string, expand bool) {
@@ -66,7 +75,7 @@ func (e *ExpandEnvs) parsePairs(log logger, items []string, expand bool) {
 		}
 		v = stringUnquote(v)
 
-		e.add(log, k, v, expand)
+		e.addAndExpand(log, k, v, expand)
 	}
 }
 
@@ -138,14 +147,19 @@ func (e *ExpandEnvs) lookupAndFilter(name string, filters []string) (string, err
 		if err != nil {
 			return "", fmt.Errorf("invalid expand filter: %s, %w", originFilter, err)
 		}
-		if len(argv) != 1 || len(argv[0]) == 0 {
+		args := argv[0]
+		if len(argv) != 1 || len(args) == 0 {
 			return "", fmt.Errorf("invalid expand filter syntax: %s, %v", originFilter, argv)
 		}
-		filterFunc, has := expandFilters[argv[0][0]]
+		filterFunc, has := expandFilters[args[0]]
+		if !has && syntax.IsValidOP(args[0]) {
+			args = append([]string{syntax.Ef_condition_check}, args...)
+			filterFunc, has = expandFilters[args[0]]
+		}
 		if !has {
 			return "", fmt.Errorf("unrecognized expand filter: %s", originFilter)
 		}
-		val, err = filterFunc(val, argv[0][1:], e)
+		val, err = filterFunc(val, args[1:], e)
 		if err != nil {
 			return "", fmt.Errorf("execute expand filter failed: %s, %w", originFilter, err)
 		}

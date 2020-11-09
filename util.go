@@ -261,7 +261,28 @@ func getCmdStringOutput(envs *ExpandEnvs, cmd, cmdDir string) (string, error) {
 	_, output, err := runCommand(envs, cmd, cmdDir, true, commandFds{}, false)
 	return output, err
 }
-
+func parseInt(s string) (int64, error) {
+	for prefix, base := range map[string]int{
+		"0x": 16,
+		"0o": 8,
+		"0b": 2,
+	} {
+		if strings.HasPrefix(s, prefix) {
+			return strconv.ParseInt(s, base, 64)
+		}
+	}
+	return strconv.ParseInt(s, 10, 64)
+}
+func parseBool(s string) (bool, error) {
+	switch strings.ToLower(s) {
+	case "true", "yes", "1":
+		return true, nil
+	case "", "false", "no", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean value: %s", s)
+	}
+}
 func checkCondition(envs *ExpandEnvs, value, operator string, compareField *string) (bool, error) {
 	fixAlias := func(o *string) {
 		if a, has := syntax.OperatorAlias[*o]; has {
@@ -273,17 +294,6 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 			operator = syntax.Op_bool_true
 		} else {
 			operator = syntax.Op_string_equal
-		}
-	}
-	var (
-		not bool
-	)
-	if idx := strings.Index(operator, " "); idx > 0 {
-		n, o := stringSplitAndTrimToPair(operator, " ")
-		fixAlias(&n)
-		if n == syntax.Op_bool_not {
-			not = true
-			operator = o
 		}
 	}
 	fixAlias(&operator)
@@ -314,19 +324,13 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 	case syntax.Op_string_lessThan:
 		ok = value < compare
 
-	case syntax.Op_number_greaterThan, syntax.Op_number_greaterThanOrEqual, syntax.Op_number_equal, syntax.Op_number_notEqual, syntax.Op_number_lessThanOrEqual, syntax.Op_number_lessThan:
-		parseInt := func(s string) (int64, error) {
-			for prefix, base := range map[string]int{
-				"0x": 16,
-				"0o": 8,
-				"0b": 2,
-			} {
-				if strings.HasPrefix(s, prefix) {
-					return strconv.ParseInt(s, base, 64)
-				}
-			}
-			return strconv.ParseInt(s, 10, 64)
-		}
+	case syntax.Op_number_greaterThan,
+		syntax.Op_number_greaterThanOrEqual,
+		syntax.Op_number_equal,
+		syntax.Op_number_notEqual,
+		syntax.Op_number_lessThanOrEqual,
+		syntax.Op_number_lessThan:
+
 		var (
 			v1, v2     int64
 			err1, err2 error
@@ -366,7 +370,18 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 		case syntax.Op_file_olderThan:
 			ok = s1.ModTime().Before(s2.ModTime())
 		}
-	//case "-ef":
+	case syntax.Op_bool_and,
+		syntax.Op_bool_or:
+		o1, e1 := parseBool(value)
+		o2, e2 := parseBool(compare)
+		if e1 != nil || e2 != nil {
+			return false, fmt.Errorf("invalid boolean value: '%s', '%s'", value, compare)
+		}
+		if operator == syntax.Op_bool_and {
+			ok = o1 && o2
+		} else {
+			ok = o1 || o2
+		}
 	default:
 		if compareField != nil {
 			return false, fmt.Errorf("operator doesn't needs compare field: %s", operator)
@@ -396,12 +411,9 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 		case syntax.Op_string_empty:
 			ok = value == ""
 		case syntax.Op_bool_true, syntax.Op_bool_not:
-			switch strings.ToLower(value) {
-			case "true", "yes", "1":
-				ok = true
-			case "", "false", "no", "0":
-				ok = false
-			default:
+			var err error
+			ok, err = parseBool(value)
+			if err != nil {
 				return false, fmt.Errorf("invalid boolean value: %s", value)
 			}
 			if operator == syntax.Op_bool_not {
@@ -475,10 +487,6 @@ func checkCondition(envs *ExpandEnvs, value, operator string, compareField *stri
 		default:
 			return false, fmt.Errorf("invalid condition operator: %s", operator)
 		}
-	}
-
-	if not {
-		return !ok, nil
 	}
 	return ok, nil
 }

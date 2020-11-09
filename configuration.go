@@ -12,10 +12,10 @@ import (
 
 type Configuration struct {
 	// defines global environment variables.
-	Envs []syntax.Env
+	Env syntax.EnvList
 	// defines templates(action list) can be referenced from tasks.
 	// the key is template name
-	Templates map[string][]syntax.Action
+	Templates map[string]syntax.ActionList
 
 	// defines tasks
 	// the key is task name
@@ -46,8 +46,7 @@ func parseConfiguration(log indentLogger, conf string, saveConf bool) *Configura
 		}
 	}
 	c := &Configuration{
-		Envs:      nil,
-		Templates: make(map[string][]syntax.Action),
+		Templates: make(map[string]syntax.ActionList),
 		Tasks:     make(map[string]syntax.Task),
 	}
 	c.buildFrom(log, currDir, conf)
@@ -127,9 +126,9 @@ func (c *Configuration) importPath(log indentLogger, baseDir, path string) {
 			log.fatalln("read env file content failed:", err)
 			return
 		}
-		c.Envs = append(c.Envs, syntax.Env{
-			Value: string(content),
-		})
+		if len(content) > 0 {
+			c.Env.AppendItem(string(content))
+		}
 	default:
 		log.debugln("ignore file:", relpath)
 	case ".yaml", ".yml":
@@ -169,7 +168,7 @@ func (c *Configuration) buildFrom(log indentLogger, baseDir, path string) {
 			return
 		}
 	}
-	c.Envs = append(c.Envs, configs.Envs...)
+	c.Env.Append(&configs.Env)
 	for name, actions := range configs.Templates {
 		_, has := c.Templates[name]
 		if has {

@@ -216,6 +216,7 @@ func init() {
 	expandFilters[syntax.Ef_condition_check] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		return expandFilters[syntax.Ef_condition_select](val, append(args, "true", "false"), envs)
 	}
+	expandFilters[syntax.Ef_condition_check_alias] = expandFilters[syntax.Ef_condition_check]
 	expandFilters[syntax.Ef_condition_select] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		var (
 			operator string
@@ -225,6 +226,8 @@ func init() {
 			noVal string
 		)
 		switch len(args) {
+		case 1:
+			args = []string{args[0], ""}
 		case 2:
 		case 3:
 			operator = args[0]
@@ -245,6 +248,7 @@ func init() {
 		}
 		return noVal, nil
 	}
+	expandFilters[syntax.Ef_condition_select_alias] = expandFilters[syntax.Ef_condition_select]
 
 	withArray := func(val string, args []string, fn func(arr []string) ([]string, error)) (string, error) {
 		var sep string

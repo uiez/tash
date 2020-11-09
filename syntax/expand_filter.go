@@ -34,9 +34,11 @@ const (
 	Ef_number_mod = "number.mod"
 
 	// args: [operator [compare]] ok no
-	Ef_condition_select = "condition.select"
+	Ef_condition_select       = "condition.select"
+	Ef_condition_select_alias = "?:"
 	// args: [operator [compare]], syntax sugar to condition.select
-	Ef_condition_check = "condition.check"
+	Ef_condition_check       = "condition.check"
+	Ef_condition_check_alias = "?"
 
 	// sort strings, args: 0: split/join separator is ' ', 1: split/join separator is args[0]
 	Ef_array_sort = "array.sort"

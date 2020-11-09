@@ -20,6 +20,8 @@ type processActions struct {
 type ActionCmd struct {
 	// working directory
 	WorkDir string
+	// command local env
+	Env EnvList
 	// command line string, supports unix pipe
 	Exec string
 

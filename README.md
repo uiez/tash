@@ -23,12 +23,10 @@ by default, tash will lookup `tash.yaml` under current/ancestor directories, or 
 ```YAML
 templates:
   build:
-    - condition:
-        value: $GOOS
-        compare: windows
+    - if:
+        check: ${GOOS | "==" "windows"}
         actions:
-          - env:
-              value: EXECUTABLE_EXT=.exe
+          env: EXECUTABLE_EXT=.exe
     - cmd:
         exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH}$EXECUTABLE_EXT
 
@@ -37,8 +35,8 @@ tasks:
     description: |-
       build native binary
     actions:
-      - cmd:
-          exec: go build -ldflags "-w -s"
+      cmd:
+        exec: go build -ldflags "-w -s"
 
   darwin:
     description: |-
@@ -46,10 +44,9 @@ tasks:
     args:
       - env: GOARCH
         description: build architecture, amd64 or 386
-        default: amd64
+        default: ${HOST_ARCH}
     actions:
-      - env:
-          value: GOOS=darwin
+      - env: GOOS=darwin
       - template: build
 
   linux:
@@ -58,10 +55,9 @@ tasks:
     args:
       - env: GOARCH
         description: build architecture, amd64 or 386
-        default: amd64
+        default: ${HOST_ARCH}
     actions:
-      - env:
-          value: GOOS=linux
+      - env: GOOS=linux
       - template: build
 
   windows:
@@ -70,32 +66,27 @@ tasks:
     args:
       - env: GOARCH
         description: build architecture, amd64 or 386
-        default: amd64
+        default: ${HOST_ARCH}
     actions:
-      - env:
-          value: GOOS=windows
+      - env: GOOS=windows
       - template: build
   all:
     description: |-
       build darwin,linux,windows binary
     actions:
-      - task:
-          name: darwin
-      - task:
-          name: linux
-      - task:
-          name: windows
+      task:
+        name: darwin; linux; windows
 
   watch:
     description: |-
       watch fs changes and build native binary
     actions:
-      - watch:
-          dirs: [.]
-          files: [./*.go]
-          actions:
-            - task:
-                name: native
+      watch:
+        dirs: .
+        files: "*.go"
+        actions:
+          task:
+            name: native
 ```
 
 * skia go binding

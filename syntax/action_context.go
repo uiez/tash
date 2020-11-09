@@ -11,7 +11,7 @@ type contextActions struct {
 }
 
 // environment definition
-type ActionEnv = Env
+type ActionEnv = EnvList
 
 const (
 	SilentFlagAllowError = "allowError"
@@ -22,12 +22,12 @@ const (
 type ActionChdir struct {
 	Dir string
 	// actions run in new working directory
-	Actions []Action
+	Actions ActionList
 }
 
 // silent execution, default hide log, but still fatal on errors
 // uses flags to changes the default behavior
 type ActionSilent struct {
 	Flags   []string
-	Actions []Action
+	Actions ActionList
 }

@@ -1,5 +1,77 @@
 package syntax
 
+import (
+	"encoding/json"
+)
+
+// Env:
+//   could be text block(lines of semicolon separated key-value pair: key=value or key="value")
+type EnvList struct {
+	envs []string
+}
+
+func (e *EnvList) UnmarshalJSON(bytes []byte) error {
+	var arrayTester []json.RawMessage
+	if json.Unmarshal(bytes, &arrayTester) == nil {
+		var envs []string
+		err := json.Unmarshal(bytes, &envs)
+		if err != nil {
+			return err
+		}
+		e.envs = envs
+	} else {
+		var env string
+		err := json.Unmarshal(bytes, &env)
+		if err != nil {
+			return err
+		}
+		e.envs = []string{env}
+	}
+	return nil
+}
+func (e *EnvList) Length() int {
+	return len(e.envs)
+}
+func (e *EnvList) Envs() []string {
+	return e.envs
+}
+func (e *EnvList) Append(es *EnvList) {
+	e.envs = append(e.envs, es.envs...)
+}
+func (e *EnvList) AppendItem(s string) {
+	e.envs = append(e.envs, s)
+}
+
+type ActionList struct {
+	actions []Action
+}
+
+func (a *ActionList) UnmarshalJSON(bytes []byte) error {
+	var arrayTester []json.RawMessage
+	if json.Unmarshal(bytes, &arrayTester) == nil {
+		var actions []Action
+		err := json.Unmarshal(bytes, &actions)
+		if err != nil {
+			return err
+		}
+		a.actions = actions
+	} else {
+		var action Action
+		err := json.Unmarshal(bytes, &action)
+		if err != nil {
+			return err
+		}
+		a.actions = []Action{action}
+	}
+	return nil
+}
+func (a *ActionList) Length() int {
+	return len(a.actions)
+}
+func (a *ActionList) Actions() []Action {
+	return a.actions
+}
+
 type Configuration struct {
 	// import other config files, supports path globbing, can be both absolute or relative path.
 	// relative path is based on current file directory.
@@ -9,25 +81,14 @@ type Configuration struct {
 	Imports string
 
 	// defines global environment variables.
-	Envs []Env
+	Env EnvList
 	// defines templates(action list) can be referenced from tasks.
 	// the key is template name
-	Templates map[string][]Action
+	Templates map[string]ActionList
 
 	// defines tasks
 	// the key is task name
 	Tasks map[string]Task
-}
-
-// it's the only way to pass parameters between action/template or to commands.
-// if name is empty, then value or cmd will be interpreted as key=value pairs,
-// otherwise value or cmd will be treated as env value
-type Env struct {
-	// env name
-	Name string
-	// env value if name is empty,
-	// otherwise it could be text block(lines of semicolon separated key-value pair: key=value or key="value")
-	Value string
 }
 
 // defines task arguments
@@ -46,8 +107,9 @@ type Task struct {
 
 	// task arguments(can be passed as environment or command line options)
 	Args []TaskArgument
+
 	// a sequence of task actions.
-	Actions []Action
+	Actions ActionList
 }
 
 type Action struct {

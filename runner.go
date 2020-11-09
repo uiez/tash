@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -158,7 +157,7 @@ func runTasks(configs *Configuration, log indentLogger, names []string, args []s
 type runner struct {
 	globalArgs []string
 	parent     *runner
-	
+
 	indentLogger
 	configs      *Configuration
 	noExitOnFail bool
@@ -219,7 +218,7 @@ func (r *runner) searchTask(name string) (syntax.Task, bool) {
 	return task, ok
 }
 
-func (r *runner) searchTemplate(name string) ([]syntax.Action, bool) {
+func (r *runner) searchTemplate(name string) (syntax.ActionList, bool) {
 	tmpl, ok := r.configs.Templates[name]
 	return tmpl, ok
 }
@@ -228,22 +227,20 @@ func (r *runner) createTaskEnvs(name string, task syntax.Task, workDir string) *
 	envs := newExpandEnvs()
 	r.debugln(">>>>> adds system environments")
 	envs.parsePairs(r.log(), os.Environ(), false)
+	r.debugln(">>>>> adds builtin environments")
+	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_WORKDIR, workDir, false)
+	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_HOST_OS, runtime.GOOS, false)
+	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_HOST_ARCH, runtime.GOARCH, false)
+	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_TASK_NAME, name, false)
+	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_PATHLISTSEP, string(os.PathListSeparator), false)
+
+	userArgsEnv := envs.copy()
 	if len(r.root().globalArgs) > 0 {
 		r.debugln(">>>>> adds user provided arguments")
 		for _, a := range r.root().globalArgs {
 			blocks := splitBlocks(a)
-			envs.parsePairs(r.log(), blocks, false)
+			userArgsEnv.parsePairs(r.log(), blocks, false)
 		}
-	}
-	r.debugln(">>>>> adds builtin environments")
-	envs.add(r.log(), syntax.BUILTIN_ENV_WORKDIR, workDir, false)
-	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_OS, runtime.GOOS, false)
-	envs.add(r.log(), syntax.BUILTIN_ENV_HOST_ARCH, runtime.GOARCH, false)
-	envs.add(r.log(), syntax.BUILTIN_ENV_TASK_NAME, name, false)
-	envs.add(r.log(), syntax.BUILTIN_ENV_PATHLISTSEP, string(os.PathListSeparator), false)
-	if len(r.configs.Envs) > 0 {
-		r.debugln(">>>>> add configuration environments")
-		envs.parseEnvs(r.log(), r.configs.Envs)
 	}
 	if len(task.Args) > 0 {
 		r.debugln(">>>>> checking task default arguments")
@@ -253,24 +250,27 @@ func (r *runner) createTaskEnvs(name string, task syntax.Task, workDir string) *
 				return envs
 			}
 
-			val, err := envs.lookupAndFilter(arg.Env, nil)
+			val, err := userArgsEnv.lookupAndFilter(arg.Env, nil)
 			if err != nil {
 				r.fatalln("lookup task argument value failed:", arg.Env, err)
 				return envs
 			}
-			if val != "" {
-				continue
+			if val == "" {
+				val = arg.Default
+				err = envs.expandStringPtrs(&val)
+				if err != nil {
+					r.fatalln("expand task args failed:", arg.Env, err)
+					return envs
+				}
+				r.debugln("uses task argument default value:", arg.Env)
 			}
-
-			err = envs.expandStringPtrs(&arg.Default)
-			if err != nil {
-				r.fatalln("expand task args failed:", arg.Env, err)
-				return envs
-			}
-
-			r.debugln("uses task argument default value:", arg.Env)
-			envs.add(r.log(), arg.Env, arg.Default, false)
+			envs.addAndExpand(r.log(), arg.Env, val, false)
 		}
+	}
+
+	if r.configs.Env.Length() > 0 {
+		r.debugln(">>>>> add configuration environments")
+		envs.parseEnv(r.log(), r.configs.Env)
 	}
 
 	return envs
@@ -428,141 +428,11 @@ func (r *runner) runActionTemplate(action string, envs *ExpandEnvs) {
 	r.addIndent().runActions(envs, actions)
 }
 
-func (r *runner) validateCondition(c *syntax.Condition) bool {
-	n := 0
-	if c.ConditionIf != nil {
-		n++
-	}
-	if c.Not != nil {
-		n++
-	}
-	if len(c.And) > 0 {
-		n++
-	}
-	if len(c.Or) > 0 {
-		n++
-	}
-	if n != 1 {
-		return false
-	}
-	if c.ConditionIf != nil {
-		return true
-	}
-	if c.Not != nil {
-		return r.validateCondition(c.Not)
-	}
-	for i := range c.And {
-		if !r.validateCondition(&c.And[i]) {
-			return false
-		}
-	}
-	for i := range c.Or {
-		if !r.validateCondition(&c.Or[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func (r *runner) evalCondition(c *syntax.Condition, envs *ExpandEnvs) bool {
-	if c.ConditionIf != nil {
-		value := c.ConditionIf.Value
-		err := envs.expandStringPtrs(&value, c.ConditionIf.Compare)
-		if err != nil {
-			r.fatalln(err)
-			return false
-		}
-		ok, err := checkCondition(envs, value, c.ConditionIf.Operator, c.ConditionIf.Compare)
-		if err != nil {
-			r.fatalln("check condition failed:", err)
-			return false
-		}
-		return ok
-	}
-	if c.Not != nil {
-		return !r.evalCondition(c.Not, envs)
-	}
-	if len(c.And) > 0 {
-		for i := range c.And {
-			if !r.evalCondition(&c.And[i], envs) {
-				return false
-			}
-		}
-		return true
-	}
-	if len(c.Or) > 0 {
-		for i := range c.Or {
-			if r.evalCondition(&c.Or[i], envs) {
-				return true
-			}
-		}
-		return false
-	}
-	panic(fmt.Errorf("unreachable"))
-}
-
-func (r *runner) runActionCondition(action syntax.ActionCondition, envs *ExpandEnvs) {
-	{
-		var n int
-		if action.ConditionCase != nil && action.ConditionCase.Default {
-			n++
-		}
-		for i := range action.Cases {
-			if action.Cases[i].Default {
-				n++
-			}
-		}
-		if n > 1 {
-			r.fatalln("multiple default cases is not allowed.")
-			return
-		}
-	}
-	var defaultCase *syntax.ConditionCase
-	checkCase := func(i int, c *syntax.ConditionCase) bool {
-		if c.Default {
-			defaultCase = c
-		}
-		if c.Condition != nil {
-			if !r.validateCondition(c.Condition) {
-				r.fatalln("invalid condition case at seq:", i)
-				return false
-			}
-			if r.evalCondition(c.Condition, envs) {
-				if i == 0 {
-					r.debugln("action condition passed")
-				} else {
-					r.debugln("action condition case passed at seq:", i)
-				}
-				r.addIndentIfDebug().runActions(envs, c.Actions)
-				return true
-			}
-		}
-		return false
-	}
-	if action.ConditionCase != nil {
-		if checkCase(0, action.ConditionCase) {
-			return
-		}
-	}
-	for i := range action.Cases {
-		c := &action.Cases[i]
-		if checkCase(i+1, c) {
-			return
-		}
-	}
-	if defaultCase != nil {
-		r.debugln("action condition run default case")
-		r.addIndentIfDebug().runActions(envs, defaultCase.Actions)
-	} else {
-		r.debugln("action condition doesn't passed")
-	}
-}
-
 func (r *runner) runActionSwitch(action syntax.ActionSwitch, envs *ExpandEnvs) {
 	{
 		var n int
-		for i := range action.Cases {
-			if action.Cases[i].Default {
+		for compare := range action.Cases {
+			if compare == action.Default {
 				n++
 			}
 		}
@@ -577,50 +447,51 @@ func (r *runner) runActionSwitch(action syntax.ActionSwitch, envs *ExpandEnvs) {
 		r.fatalln(err)
 		return
 	}
-	var defaultCase syntax.SwitchCase
-	for _, c := range action.Cases {
-		if c.Default {
-			defaultCase = c
-		}
-		if c.Compare != nil {
-			compare := *c.Compare
+	var defaultActions syntax.ActionList
+	for compare, actions := range action.Cases {
+		if compare == action.Default {
+			defaultActions = actions
+		} else {
 			err := envs.expandStringPtrs(&compare)
 			if err != nil {
 				r.fatalln(err)
 				return
 			}
-			ok, err := checkCondition(envs, value, action.Operator, c.Compare)
+			ok, err := checkCondition(envs, value, action.Operator, &compare)
 			if err != nil {
 				r.fatalln("check condition failed:", err)
 				return
 			}
 			if ok {
-				r.debugln("action switch case run:", *c.Compare)
-				r.addIndentIfDebug().runActions(envs, c.Actions)
+				r.debugln("action switch case run:", compare)
+				r.addIndentIfDebug().runActions(envs, actions)
 				return
 			}
 		}
 	}
-	if defaultCase.Default {
+	if defaultActions.Length() > 0 {
 		r.debugln("action switch run default case")
-		r.addIndent().runActions(envs, defaultCase.Actions)
+		r.addIndent().runActions(envs, defaultActions)
 	} else {
 		r.debugln("action switch no case matched")
 	}
 }
 
 func (r *runner) runActionIf(action syntax.ActionIf, envs *ExpandEnvs) {
-	if !r.validateCondition(action.Condition) {
-		r.fatalln("invalid condition")
-		return
+	val, err := envs.expandString(action.Check)
+	if err != nil {
+		r.fatalln(err)
 	}
-
-	if r.evalCondition(action.Condition, envs) {
+	ok, err := checkCondition(envs, val, "", nil)
+	if err != nil {
+		r.fatalln("check condition failed:", err)
+	}
+	if ok {
 		r.debugln("action if passed")
-		r.addIndentIfDebug().runActions(envs, action.OK)
+		r.addIndentIfDebug().runActions(envs, action.Actions)
 	} else {
 		r.debugln("action if failed")
-		r.addIndentIfDebug().runActions(envs, action.Fail)
+		r.addIndentIfDebug().runActions(envs, action.Else)
 	}
 }
 
@@ -684,17 +555,26 @@ func (r *runner) runActionLoop(action syntax.ActionLoop, envs *ExpandEnvs) {
 	looper(func(v string) {
 		envs := envs
 		r := r.addIndentIfDebug()
-		if action.Env != "" {
-			envs.add(r.log(), action.Env, v, false)
 
-			r.debugln("loop run with env:", action.Env+"="+v)
+		var (
+			varEnvVal   string
+			varEnvExist bool
+		)
+		if action.Var != "" {
+			varEnvVal, varEnvExist = envs.get(action.Var)
+			envs.set(action.Var, v)
+
+			r.debugln("loop run with var:", action.Var+"="+v)
 		}
 		r.runActions(envs, action.Actions)
+		if varEnvExist { // restore
+			envs.set(action.Var, varEnvVal)
+		}
 	})
 }
 
 func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
-	envs.add(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, "", false)
+	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, "", false)
 
 	var fds commandFds
 	var err error
@@ -733,12 +613,19 @@ func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
 			fds.Stderr = out
 		}
 	}
-	pid, _, err := runCommand(envs, action.Exec, action.WorkDir, false, fds, action.Background)
+
+	cmdEnvs := envs
+	if action.Env.Length() > 0 {
+		cmdEnvs = envs.copy()
+		r.debugln(">>>>> add command local environments")
+		cmdEnvs.parseEnv(r.log(), action.Env)
+	}
+	pid, _, err := runCommand(cmdEnvs, action.Exec, action.WorkDir, false, fds, action.Background)
 	if err != nil {
 		r.fatalln("run command failed:", err)
 		return
 	}
-	envs.add(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, strconv.Itoa(pid), false)
+	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, strconv.Itoa(pid), false)
 }
 
 func (r *runner) runActionWatch(action syntax.ActionWatch, envs *ExpandEnvs) {
@@ -873,7 +760,7 @@ func (r *runner) runActionTask(name string, passEnvs, returnEnvs []string, envs 
 	transferEnvs := func(from, to *ExpandEnvs, envs []string) {
 		for _, env := range envs {
 			v, _ := from.lookupAndFilter(env, nil)
-			to.add(nr.log(), env, v, false)
+			to.addAndExpand(nr.log(), env, v, false)
 		}
 	}
 	transferEnvs(envs, taskEnvs, passEnvs)
@@ -905,12 +792,12 @@ func (r *runner) expandPathBlockAndGlob(path string, envs *ExpandEnvs, mustBeFil
 	return matched, true
 }
 
-func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
-	for _, a := range a {
+func (r *runner) runActions(envs *ExpandEnvs, a syntax.ActionList) {
+	for _, a := range a.Actions() {
 		r.next(func() {
-			if !reflect.DeepEqual(a.Env, syntax.Env{}) {
+			if a.Env.Length() > 0 {
 				r.debugln("Env")
-				envs.parseEnvs(r.addIndentIfDebug().log(), []syntax.Env{a.Env})
+				envs.parseEnv(r.addIndentIfDebug().log(), a.Env)
 			}
 		})
 		r.next(func() {
@@ -992,7 +879,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 			}
 		})
 		r.next(func() {
-			if len(a.Chdir.Actions) > 0 {
+			if a.Chdir.Actions.Length() > 0 {
 				err := envs.expandStringPtrs(&a.Chdir.Dir)
 				if err != nil {
 					r.fatalln(err)
@@ -1041,31 +928,25 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 			}
 		})
 		r.next(func() {
-			if len(a.Condition.Cases) > 0 || a.Condition.ConditionCase != nil {
-				r.debugln("Condition")
-				r.runActionCondition(a.Condition, envs)
-			}
-		})
-		r.next(func() {
 			if len(a.Switch.Cases) > 0 {
 				r.debugln("Switch")
 				r.runActionSwitch(a.Switch, envs)
 			}
 		})
 		r.next(func() {
-			if len(a.If.OK) > 0 || len(a.If.Fail) > 0 {
+			if a.If.Actions.Length() > 0 || a.If.Else.Length() > 0 {
 				r.debugln("If")
 				r.runActionIf(a.If, envs)
 			}
 		})
 		r.next(func() {
-			if len(a.Loop.Actions) > 0 {
+			if a.Loop.Actions.Length() > 0 {
 				r.debugln("Loop")
 				r.runActionLoop(a.Loop, envs)
 			}
 		})
 		r.next(func() {
-			if len(a.Silent.Actions) > 0 {
+			if a.Silent.Actions.Length() > 0 {
 				r.debugln("Silent")
 				var (
 					showLog    bool
@@ -1124,7 +1005,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a []syntax.Action) {
 			}
 		})
 		r.next(func() {
-			if len(a.Watch.Actions) > 0 {
+			if a.Watch.Actions.Length() > 0 {
 				r.infoln("Watch.")
 				r.runActionWatch(a.Watch, envs)
 			}

@@ -80,5 +80,5 @@ type ActionWatch struct {
 	// file patterns in matched directories, support glob
 	Files string
 
-	Actions []Action
+	Actions ActionList
 }
