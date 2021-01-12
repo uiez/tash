@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	github.com/cosiner/argv v0.1.1-0.20200416041250-86e3c689263e
-	github.com/cosiner/flag v0.4.1-0.20200423022717-4151cd9fcc8a
+	github.com/cosiner/flag v0.5.2
 	github.com/fatih/color v1.9.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/ghodss/yaml v1.0.0

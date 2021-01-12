@@ -21,57 +21,13 @@ by default, tash will lookup `tash.yaml` under current/ancestor directories, or 
 # Example
 * building tash itself
 ```YAML
-templates:
-  build:
-    cmd:
-      exec: go build -ldflags "-w -s" -o tash_${GOOS}_${GOARCH}${GOOS | == windows | "?:" .exe}
-
 tasks:
-  native:
+  build:
     description: |-
       build native binary
     actions:
       cmd:
         exec: go build -ldflags "-w -s"
-
-  darwin:
-    description: |-
-      build darwin binary
-    args:
-      - env: GOARCH
-        description: build architecture, amd64 or 386
-        default: ${HOST_ARCH}
-    actions:
-      - env: GOOS=darwin
-      - template: build
-
-  linux:
-    description: |-
-      build linux binary
-    args:
-      - env: GOARCH
-        description: build architecture, amd64 or 386
-        default: ${HOST_ARCH}
-    actions:
-      - env: GOOS=linux
-      - template: build
-
-  windows:
-    description: |-
-      build windows binary
-    args:
-      - env: GOARCH
-        description: build architecture, amd64 or 386
-        default: ${HOST_ARCH}
-    actions:
-      - env: GOOS=windows
-      - template: build
-  all:
-    description: |-
-      build darwin,linux,windows binary
-    actions:
-      task:
-        name: darwin; linux; windows
 
   watch:
     description: |-
