@@ -27,16 +27,13 @@ const (
 	Ef_string_lastIndex = "string.lastIndex"
 
 	// number calculating
-	Ef_number_add = "number.add"
-	Ef_number_sub = "number.sub"
-	Ef_number_div = "number.div"
-	Ef_number_mul = "number.mul"
-	Ef_number_mod = "number.mod"
+	// args: operator operand
+	Ef_number_calc = "number.calc"
 
-	// args: [operator [compare]] ok no
+	// args: ok [no]
 	Ef_condition_select       = "condition.select"
 	Ef_condition_select_alias = "?:"
-	// args: [operator [compare]], syntax sugar to condition.select
+	// args: [operator [compare]]
 	Ef_condition_check       = "condition.check"
 	Ef_condition_check_alias = "?"
 

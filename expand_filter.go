@@ -161,67 +161,68 @@ func init() {
 		return strconv.Itoa(idx), nil
 	}
 
-	numberCalculate := func(operator, val string, args []string, envs *ExpandEnvs) (string, error) {
-		if len(args) != 1 {
+	expandFilters[syntax.Ef_number_calc] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 2 {
 			return "", fmt.Errorf("invalid args count")
 		}
 		v1, err := strconv.Atoi(val)
 		if err != nil {
 			return "", fmt.Errorf("invalid number: %s", val)
 		}
-		v2, err := strconv.Atoi(args[0])
+		v2, err := strconv.Atoi(args[1])
 		if err != nil {
 			return "", fmt.Errorf("invalid operand: %s", args[0])
 		}
 
 		var n int
-		switch operator {
-		case syntax.Ef_number_add:
+		switch args[0] {
+		case "+":
 			n = v1 + v2
-		case syntax.Ef_number_sub:
+		case "-":
 			n = v1 - v2
-		case syntax.Ef_number_mul:
+		case "*":
 			n = v1 * v2
-		case syntax.Ef_number_div:
+		case "/":
 			if v2 == 0 {
 				return "", fmt.Errorf("invalid operand: %s", args[0])
 			}
 			n = v1 / v2
-		case syntax.Ef_number_mod:
+		case "%":
 			if v2 == 0 {
 				return "", fmt.Errorf("invalid operand: %s", args[0])
 			}
 			n = v1 % v2
 		default:
-			return "", fmt.Errorf("unsupported operator: %s", operator)
+			return "", fmt.Errorf("unsupported operator: %s", args[0])
 		}
 		return strconv.Itoa(n), nil
 	}
-	expandFilters[syntax.Ef_number_add] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return numberCalculate(syntax.Ef_number_add, val, args, envs)
-	}
-	expandFilters[syntax.Ef_number_sub] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return numberCalculate(syntax.Ef_number_sub, val, args, envs)
-	}
-	expandFilters[syntax.Ef_number_mul] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return numberCalculate(syntax.Ef_number_mul, val, args, envs)
-	}
-	expandFilters[syntax.Ef_number_div] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return numberCalculate(syntax.Ef_number_div, val, args, envs)
-	}
-	expandFilters[syntax.Ef_number_mod] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return numberCalculate(syntax.Ef_number_mod, val, args, envs)
-	}
 
 	expandFilters[syntax.Ef_condition_check] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return expandFilters[syntax.Ef_condition_select](val, append(args, "true", "false"), envs)
-	}
-	expandFilters[syntax.Ef_condition_check_alias] = expandFilters[syntax.Ef_condition_check]
-	expandFilters[syntax.Ef_condition_select] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		var (
 			operator string
 			compare  *string
+		)
+		switch len(args) {
+		case 0:
+		case 1:
+			operator = args[0]
+		case 2:
+			operator = args[0]
+			compare = &args[1]
+		default:
+			return "", fmt.Errorf("args count invalid")
+		}
+		ok, err := checkCondition(envs, val, operator, compare)
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatBool(ok), nil
+	}
 
+	expandFilters[syntax.Ef_condition_check_alias] = expandFilters[syntax.Ef_condition_check]
+	expandFilters[syntax.Ef_condition_select] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		var (
 			okVal string
 			noVal string
 		)
@@ -229,17 +230,12 @@ func init() {
 		case 1:
 			args = []string{args[0], ""}
 		case 2:
-		case 3:
-			operator = args[0]
-		case 4:
-			operator = args[0]
-			compare = &args[1]
 		default:
 			return "", fmt.Errorf("args count invalid")
 		}
 		okVal = args[len(args)-2]
 		noVal = args[len(args)-1]
-		ok, err := checkCondition(envs, val, operator, compare)
+		ok, err := checkCondition(envs, val, "", nil)
 		if err != nil {
 			return "", err
 		}
