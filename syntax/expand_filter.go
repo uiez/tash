@@ -4,23 +4,18 @@ package syntax
 const (
 	// args: defaultValue
 	Ef_string_default = "string.default"
-	// args: no args
-	Ef_string_trimSpace = "string.trimSpace"
-	// args: prefix
-	Ef_string_trimPrefix = "string.trimPrefix"
-	// args: suffix
-	Ef_string_trimSuffix = "string.trimSuffix"
+	// args: function [function args]
+	//	trimSpace:
+	//	trimPrefix:
+	//	trimSuffix:
+	//	quote:
+	//	unquote:
+	//	replace:  [str replace]....
+	//	regexpReplace: [regexp replace]....
+	Ef_string_transform = "string.transform"
 	// nargs: 0: whole string, 1: lower characters after [index], 2:index count, lower [count] characters after [index]
 	// index could be negative to iterate from last, begin at -1
-	Ef_string_lower = "string.lower"
-	// args is same as stringLower, but transform to upper case.
-	Ef_string_upper = "string.upper"
-	// args is same as stringLower, but returns string inside the range
 	Ef_string_slice = "string.slice"
-	// args: [old new]..., do literal replacing
-	Ef_string_replace = "string.replace"
-	// args: [old new]..., do regexp replacing
-	Ef_string_regexpReplace = "string.regexpReplace"
 	// args: searching, search string
 	Ef_string_index = "string.index"
 	// args: searching, search string
@@ -76,6 +71,9 @@ const (
 	Ef_map_keys = "map.keys"
 	// split string and return values, args: 0: no args, 1: array separator
 	Ef_map_values = "map.values"
+
+	// get content from json, args: key, nested by '.'
+	Ef_json_get = "json.get"
 
 	// return files match given pattern, args: 0: join separator is ' ', 1: join separator is args[0]
 	Ef_file_glob = "file.glob"

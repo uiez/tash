@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/mattn/go-zglob"
+	"github.com/tidwall/gjson"
 	"github.com/uiez/tash/syntax"
 )
 
@@ -57,29 +57,6 @@ func parseRange(l int, args []string) (start, end int, err error) {
 	return
 }
 
-func stringReplace(val string, args []string, isRegexp bool) (string, error) {
-	if len(args)%2 != 0 || len(args) <= 0 {
-		return "", fmt.Errorf("invalid argument count")
-	}
-	if !isRegexp {
-		if len(args) == 2 {
-			val = strings.ReplaceAll(val, args[0], args[1])
-		} else {
-			r := strings.NewReplacer(args...)
-			val = r.Replace(val)
-		}
-	} else {
-		for i := 0; i < len(args); i += 2 {
-			r, err := regexp.CompilePOSIX(args[i])
-			if err != nil {
-				return "", fmt.Errorf("compile regexp failed: %s, %w", args[i], err)
-			}
-			val = r.ReplaceAllString(val, args[i+1])
-		}
-	}
-	return val, nil
-}
-
 var expandFilters = map[string]func(val string, args []string, envs *ExpandEnvs) (string, error){}
 
 func init() {
@@ -92,45 +69,58 @@ func init() {
 		}
 		return val, nil
 	}
-	expandFilters[syntax.Ef_string_trimSpace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		if len(args) != 0 {
-			return "", fmt.Errorf("args is not needed")
-		}
-		return strings.TrimSpace(val), nil
-	}
-	expandFilters[syntax.Ef_string_trimPrefix] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		if len(args) != 1 {
+	expandFilters[syntax.Ef_string_transform] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) == 0 {
 			return "", fmt.Errorf("args invalid")
 		}
-		return strings.TrimPrefix(val, args[1]), nil
-	}
-	expandFilters[syntax.Ef_string_trimSuffix] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		if len(args) != 1 {
-			return "", fmt.Errorf("args invalid")
+		fn := args[0]
+		args = args[1:]
+		switch fn {
+		case "trimSpace":
+			if len(args) != 0 {
+				return "", fmt.Errorf("%s args not needed", fn)
+			}
+			return strings.TrimSpace(val), nil
+		case "trimPrefix":
+			if len(args) != 1 {
+				return "", fmt.Errorf("%s args invalid", fn)
+			}
+			return strings.TrimPrefix(val, args[1]), nil
+		case "trimSuffix":
+			if len(args) != 1 {
+				return "", fmt.Errorf("%s args invalid", fn)
+			}
+			return strings.TrimSuffix(val, args[1]), nil
+		case "quote":
+			if len(args) != 0 {
+				return "", fmt.Errorf("%s args not needed", fn)
+			}
+			return strconv.Quote(val), nil
+		case "unquote":
+			if len(args) != 0 {
+				return "", fmt.Errorf("%s args not needed", fn)
+			}
+			return strconv.Unquote(val)
+		case "replace":
+			if len(args)%2 != 0 {
+				return "", fmt.Errorf("%s args invalid", fn)
+			}
+			return strings.NewReplacer(args...).Replace(val), nil
+		case "regexpReplace":
+			if len(args)%2 != 0 {
+				return "", fmt.Errorf("%s args invalid", fn)
+			}
+			for i := 0; i < len(args); i += 2 {
+				r, err := regexp.CompilePOSIX(args[i])
+				if err != nil {
+					return "", fmt.Errorf("compile regexp failed: %s, %w", args[i], err)
+				}
+				val = r.ReplaceAllString(val, args[i+1])
+			}
+			return val, nil
+		default:
+			return "", fmt.Errorf("%s not supported", fn)
 		}
-		return strings.TrimSuffix(val, args[1]), nil
-	}
-	expandFilters[syntax.Ef_string_lower] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		rs := []rune(val)
-		start, end, err := parseRange(len(rs), args)
-		if err != nil {
-			return "", err
-		}
-		for i, v := 0, rs[start:end]; i < len(v); i++ {
-			v[i] = unicode.ToLower(v[i])
-		}
-		return string(rs), nil
-	}
-	expandFilters[syntax.Ef_string_upper] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		rs := []rune(val)
-		start, end, err := parseRange(len(rs), args)
-		if err != nil {
-			return "", err
-		}
-		for i, v := 0, rs[start:end]; i < len(v); i++ {
-			v[i] = unicode.ToUpper(v[i])
-		}
-		return string(rs), nil
 	}
 	expandFilters[syntax.Ef_string_slice] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		rs := []rune(val)
@@ -140,17 +130,18 @@ func init() {
 		}
 		return string(rs[start:end]), nil
 	}
-	expandFilters[syntax.Ef_string_replace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return stringReplace(val, args, false)
-	}
-	expandFilters[syntax.Ef_string_regexpReplace] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return stringReplace(val, args, true)
-	}
 	expandFilters[syntax.Ef_string_index] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 1 {
 			return "", fmt.Errorf("invalid args count")
 		}
 		idx := strings.Index(val, args[0])
+		return strconv.Itoa(idx), nil
+	}
+	expandFilters[syntax.Ef_string_lastIndex] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 1 {
+			return "", fmt.Errorf("invalid args count")
+		}
+		idx := strings.LastIndex(val, args[0])
 		return strconv.Itoa(idx), nil
 	}
 	expandFilters[syntax.Ef_string_lastIndex] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
@@ -517,7 +508,21 @@ func init() {
 		}
 		return strings.Join(vals, sep), nil
 	}
-
+	expandFilters[syntax.Ef_json_get] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) <= 0 || len(args) > 2 {
+			return "", fmt.Errorf("args invalid")
+		}
+		if val != "" {
+			val := gjson.Get(val, args[0])
+			if val.Exists() {
+				return val.String(), nil
+			}
+		}
+		if len(args) == 2 {
+			return args[1], nil
+		}
+		return "", fmt.Errorf("key not exist")
+	}
 	expandFilters[syntax.Ef_file_glob] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		var sep string
 		switch len(args) {
