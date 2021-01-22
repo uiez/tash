@@ -128,7 +128,15 @@ func (e *ExpandEnvs) trimSpaceIfUnquoted(s string) string {
 func (e *ExpandEnvs) lookupAndFilter(name string, filters []string) (string, error) {
 	var val string
 	if us := stringUnquote(name); us != name {
-		val = us
+		if strings.Contains(us, "$") {
+			var err error
+			val, err = e.expandString(us)
+			if err != nil {
+				return "", fmt.Errorf("expand failed: `%s`, %w", us, err)
+			}
+		} else {
+			val = us
+		}
 	} else {
 		val = e.envs[name]
 	}
