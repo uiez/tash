@@ -34,7 +34,7 @@ func parseRange(l int, args []string) (start, end int, err error) {
 		var err1 error
 		var err2 error
 		start, err1 = strconv.Atoi(args[0])
-		count, err2 = strconv.Atoi(args[0])
+		count, err2 = strconv.Atoi(args[1])
 		if err1 != nil || err2 != nil {
 			return 0, 0, fmt.Errorf("couldn't convert args to integer")
 		}

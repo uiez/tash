@@ -13,7 +13,7 @@ const (
 	//	replace:  [str replace]....
 	//	regexpReplace: [regexp replace]....
 	Ef_string_transform = "string.transform"
-	// nargs: 0: whole string, 1: lower characters after [index], 2:index count, lower [count] characters after [index]
+	// nargs: 0: whole string, 1: characters since [index], 2:index count
 	// index could be negative to iterate from last, begin at -1
 	Ef_string_slice = "string.slice"
 	// args: searching, search string

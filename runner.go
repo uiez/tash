@@ -567,7 +567,7 @@ func (r *runner) runActionLoop(action syntax.ActionLoop, envs *ExpandEnvs) {
 	})
 }
 
-func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
+func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs, execs []string) {
 	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, "", false)
 
 	var fds commandFds
@@ -614,12 +614,17 @@ func (r *runner) runActionCmd(action syntax.ActionCmd, envs *ExpandEnvs) {
 		r.debugln(">>>>> add command local environments")
 		cmdEnvs.parseEnv(r.log(), action.Env)
 	}
-	pid, _, err := runCommand(cmdEnvs, action.Exec, action.WorkDir, false, fds, action.Background)
-	if err != nil {
-		r.fatalln("run command failed:", err)
-		return
+	for _, exec := range execs {
+		if exec != "" {
+			r.infoln("exec:", exec)
+			pid, _, err := runCommand(cmdEnvs, exec, action.WorkDir, false, fds, action.Background)
+			if err != nil {
+				r.fatalln("run command failed:", err)
+				return
+			}
+			envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, strconv.Itoa(pid), false)
+		}
 	}
-	envs.addAndExpand(r.log(), syntax.BUILTIN_ENV_LAST_COMMAND_PID, strconv.Itoa(pid), false)
 }
 
 func (r *runner) runActionWatch(action syntax.ActionWatch, envs *ExpandEnvs) {
@@ -822,8 +827,9 @@ func (r *runner) runActions(envs *ExpandEnvs, a syntax.ActionList) {
 				return
 			}
 
-			r.infoln("Cmd:", a.Cmd.Exec)
-			r.runActionCmd(a.Cmd, envs)
+			execs := stringSplitAndTrim(a.Cmd.Exec, "\n")
+			r.infoln("Cmd")
+			r.addIndent().runActionCmd(a.Cmd, envs, execs)
 		})
 		next(a.Copy.DestPath != "", func() {
 			err := envs.expandStringPtrs(&a.Copy.SourceUrl, &a.Copy.DestPath)
@@ -832,7 +838,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a syntax.ActionList) {
 			}
 			ptrsToSlash(&a.Copy.SourceUrl, &a.Copy.DestPath)
 			r.infoln("Copy:", a.Copy.SourceUrl, a.Copy.DestPath)
-			r.runActionCopy(a.Copy, envs)
+			r.addIndentIfDebug().runActionCopy(a.Copy, envs)
 		})
 		next(a.Del != "", func() {
 			matched, ok := r.expandPathBlockAndGlob(a.Del, envs, false)
@@ -931,7 +937,7 @@ func (r *runner) runActions(envs *ExpandEnvs, a syntax.ActionList) {
 		})
 		next(a.If.Actions.Length() > 0 || a.If.Else.Length() > 0, func() {
 			r.debugln("If")
-			r.runActionIf(a.If, envs)
+			r.addIndentIfDebug().runActionIf(a.If, envs)
 		})
 		next(a.Loop.Actions.Length() > 0, func() {
 			r.debugln("Loop")
