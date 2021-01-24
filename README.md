@@ -28,21 +28,7 @@ tasks:
     actions:
       cmd:
         exec: go build -ldflags "-w -s"
-
-  watch:
-    description: |-
-      watch fs changes and build native binary
-    actions:
-      watch:
-        dirs: .
-        files: "*.go"
-        actions:
-          task:
-            name: native
 ```
-
-* skia go binding
-[tash.yaml](https://github.com/uiez/skia-go/blob/master/tash.yaml)
 
 # Configuration Syntax
 defined in [syntax](/syntax) folder.

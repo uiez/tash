@@ -5,14 +5,3 @@ tasks:
     actions:
       cmd:
         exec: go build -ldflags "-w -s"
-
-  watch:
-    description: |-
-      watch fs changes and build native binary
-    actions:
-      watch:
-        dirs: .
-        files: "*.go"
-        actions:
-          task:
-            name: native
