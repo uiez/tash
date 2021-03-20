@@ -2,6 +2,9 @@ package syntax
 
 // expand filters
 const (
+	// dynamically resolve variable
+	Ef_var_resolve = "var.resolve"
+
 	// args: defaultValue
 	Ef_string_default = "string.default"
 	// args: function [function args]
@@ -10,6 +13,8 @@ const (
 	//	trimSuffix:
 	//	quote:
 	//	unquote:
+	//	upper:
+	//	lower:
 	//	replace:  [str replace]....
 	//	regexpReplace: [regexp replace]....
 	Ef_string_transform = "string.transform"
@@ -42,20 +47,13 @@ const (
 	Ef_array_filter = "array.filter"
 
 	// split string and return element at index, index can be negative.
-	// args: 1: index, sep is ' ', 2: sep index
+	// args: 1: index
 	Ef_array_get = "array.get"
-	// split string and return element at index, index can be negative and element must exist
-	Ef_array_mustGet = "array.mustGet"
-	// split string and return element at index, index can not be negative
-	Ef_array_at = "array.at"
-	// split string and return element at index, index can not be negative
-	Ef_array_mustAt = "array.mustAt"
-
 	// split string and return index of element, index can not be negative.
-	// args: 1: element, sep is ' ', 2: sep element
+	// args: 1: element
 	Ef_array_index = "array.index"
-	// split string and return index of element, element must exist
-	Ef_array_mustIndex = "array.mustIndex"
+	// args: 1: element
+	Ef_array_has = "array.has"
 
 	// split string, calculate array slice and join
 	// args: 1: index

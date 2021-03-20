@@ -60,6 +60,13 @@ func parseRange(l int, args []string) (start, end int, err error) {
 var expandFilters = map[string]func(val string, args []string, envs *ExpandEnvs) (string, error){}
 
 func init() {
+	expandFilters[syntax.Ef_var_resolve] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 0 {
+			return "", fmt.Errorf("args not needed")
+		}
+		val, _ = envs.get(val)
+		return val, nil
+	}
 	expandFilters[syntax.Ef_string_default] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		if len(args) != 1 {
 			return "", fmt.Errorf("invalid args")
@@ -101,6 +108,16 @@ func init() {
 				return "", fmt.Errorf("%s args not needed", fn)
 			}
 			return strconv.Unquote(val)
+		case "upper":
+			if len(args) != 0 {
+				return "", fmt.Errorf("%s args not needed", fn)
+			}
+			return strings.ToUpper(val), nil
+		case "lower":
+			if len(args) != 0 {
+				return "", fmt.Errorf("%s args not needed", fn)
+			}
+			return strings.ToLower(val), nil
 		case "replace":
 			if len(args)%2 != 0 {
 				return "", fmt.Errorf("%s args invalid", fn)
@@ -293,51 +310,27 @@ func init() {
 		})
 	}
 
-	arrayAt := func(val string, args []string, isIndex, mustExist bool) (string, error) {
-		var sep string
-		var index string
-		switch len(args) {
-		case 1:
-			sep = syntax.DefaultArraySeparator
-			index = args[0]
-		case 2:
-			sep = args[0]
-			index = args[1]
-		default:
+	expandFilters[syntax.Ef_array_get] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 1 {
 			return "", fmt.Errorf("args invalid")
 		}
 
+		sep := syntax.DefaultArraySeparator
+		index := args[0]
 		arr := stringSplitAndTrimFilterSpace(val, sep)
 		eleIdx, err := strconv.Atoi(index)
 		if err != nil {
 			return "", fmt.Errorf("convert element index to number failed: '%s'", index)
 		}
-		if !isIndex {
-			if eleIdx < 0 {
-				eleIdx = len(arr) + eleIdx
-			}
+		if eleIdx < 0 {
+			eleIdx = len(arr) + eleIdx
 		}
 
 		valid := eleIdx >= 0 && eleIdx < len(arr)
 		if valid {
 			return arr[eleIdx], nil
 		}
-		if !mustExist {
-			return "", nil
-		}
-		return "", fmt.Errorf("array element at given index not exist")
-	}
-	expandFilters[syntax.Ef_array_get] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return arrayAt(val, args, false, false)
-	}
-	expandFilters[syntax.Ef_array_mustGet] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return arrayAt(val, args, false, true)
-	}
-	expandFilters[syntax.Ef_array_at] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return arrayAt(val, args, true, false)
-	}
-	expandFilters[syntax.Ef_array_mustAt] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return arrayAt(val, args, true, true)
+		return "", nil
 	}
 	expandFilters[syntax.Ef_array_slice] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		var sep string
@@ -379,22 +372,15 @@ func init() {
 	}
 	expandFilters[syntax.Ef_array_filter] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
 		var compare *string
-		var sep string
 		switch len(args) {
 		case 1:
 		case 2:
 			compare = &args[1]
-		case 3:
-			compare = &args[1]
-			sep = args[2]
 		default:
 			return "", fmt.Errorf("args invalid")
 		}
 		operator := args[0]
-		if sep == "" {
-			sep = syntax.DefaultArraySeparator
-		}
-		arr := stringSplitAndTrimFilterSpace(val, sep)
+		arr := stringSplitAndTrimFilterSpace(val, syntax.DefaultArraySeparator)
 		var end int
 		for i, s := range arr {
 			ok, err := checkCondition(envs, s, operator, compare)
@@ -409,41 +395,31 @@ func init() {
 			}
 		}
 		arr = arr[:end]
-		return strings.Join(arr, sep), nil
+		return strings.Join(arr, syntax.DefaultArraySeparator), nil
 	}
-	arrayIndex := func(val string, args []string, mustExist bool) (string, error) {
-		var (
-			sep string
-			ele string
-		)
-		switch len(args) {
-		case 1:
-			ele = args[0]
-		case 2:
-			sep = args[0]
-			ele = args[1]
-		default:
+	expandFilters[syntax.Ef_array_index] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 1 {
 			return "", fmt.Errorf("invalid args")
 		}
-		if sep == "" {
-			sep = syntax.DefaultArraySeparator
-		}
-		arr := stringSplitAndTrimFilterSpace(val, sep)
+		arr := stringSplitAndTrimFilterSpace(val, syntax.DefaultArraySeparator)
 		for i := range arr {
-			if arr[i] == ele {
+			if arr[i] == args[0] {
 				return strconv.Itoa(i), nil
 			}
 		}
-		if mustExist {
-			return "", fmt.Errorf("element not found in array")
-		}
 		return "-1", nil
 	}
-	expandFilters[syntax.Ef_array_index] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return arrayIndex(val, args, false)
-	}
-	expandFilters[syntax.Ef_array_mustIndex] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
-		return arrayIndex(val, args, true)
+	expandFilters[syntax.Ef_array_has] = func(val string, args []string, envs *ExpandEnvs) (string, error) {
+		if len(args) != 1 {
+			return "", fmt.Errorf("invalid args")
+		}
+		arr := stringSplitAndTrimFilterSpace(val, syntax.DefaultArraySeparator)
+		for i := range arr {
+			if arr[i] == args[0] {
+				return "true", nil
+			}
+		}
+		return "false", nil
 	}
 
 	parseMap := func(val string, sepArgs []string) (map[string]string, string, error) {
